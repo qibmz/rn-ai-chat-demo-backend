@@ -16,6 +16,8 @@ export default defineConfig({
       NODE_ENV: 'test',
       THROTTLE_LIMIT: '1000',
       THROTTLE_TTL_MS: '60000',
+      DEEPSEEK_API_KEY: 'test-deepseek-key-not-placeholder',
+      CHAT_ATTACHMENT_STORAGE: 'disabled',
     },
   },
 });

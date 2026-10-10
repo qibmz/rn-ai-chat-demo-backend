@@ -15,5 +15,74 @@ model User {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
+  conversations Conversation[]
+  attachments   Attachment[]
+
   @@map("users")
+}
+
+model Conversation {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  title     String    @default("新对话")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([userId, updatedAt])
+  @@map("conversations")
+}
+
+enum MessageRole {
+  user
+  assistant
+  system
+}
+
+model Message {
+  id                 String      @id @default(uuid()) @db.Uuid
+  conversationId     String      @map("conversation_id") @db.Uuid
+  role               MessageRole
+  content            String      @db.Text
+  /// JSON parts: [{ type: "text"|"image", text?, attachmentId? }]
+  parts              Json        @default("[]")
+  reasoningContent   String?     @map("reasoning_content") @db.Text
+  thinkingEnabled    Boolean?    @map("thinking_enabled")
+  reasoningEffort    String?     @map("reasoning_effort")
+  finishReason       String?     @map("finish_reason")
+  promptTokens       Int?        @map("prompt_tokens")
+  completionTokens   Int?        @map("completion_tokens")
+  totalTokens        Int?        @map("total_tokens")
+  promptCacheHitTokens  Int?     @map("prompt_cache_hit_tokens")
+  promptCacheMissTokens Int?     @map("prompt_cache_miss_tokens")
+  reasoningTokens    Int?        @map("reasoning_tokens")
+  costMicros         BigInt?     @map("cost_micros")
+  /// Snapshot of pricing version / unit prices used for costMicros
+  priceVersion       String?     @map("price_version")
+  createdAt          DateTime    @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  attachments  Attachment[]
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+model Attachment {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  messageId String?   @map("message_id") @db.Uuid
+  r2Key     String    @unique @map("r2_key")
+  mimeType  String    @map("mime_type")
+  byteSize  Int       @map("byte_size")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("attachments")
 }
