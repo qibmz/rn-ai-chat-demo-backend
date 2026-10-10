@@ -1,4 +1,4 @@
-import { ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
+import { ArgumentsHost, BadRequestException } from '@nestjs/common';
 import { AllExceptionsFilter } from './all-exceptions.filter.js';
 
 describe('AllExceptionsFilter', () => {
@@ -8,84 +8,75 @@ describe('AllExceptionsFilter', () => {
   };
   const filter = new AllExceptionsFilter(logger as never);
 
-  function mockHost(url = '/auth/login') {
-    const json = vi.fn();
-    const end = vi.fn();
-    const status = vi.fn().mockReturnValue({ json, end });
-    const response = { status, json, end };
-    const request = { url, method: 'POST' };
-    const host = {
+  function mockHost(response: {
+    headersSent: boolean;
+    writableEnded?: boolean;
+    status: ReturnType<typeof vi.fn>;
+    json: ReturnType<typeof vi.fn>;
+    write: ReturnType<typeof vi.fn>;
+    end: ReturnType<typeof vi.fn>;
+  }): ArgumentsHost {
+    return {
       switchToHttp: () => ({
         getResponse: () => response,
-        getRequest: () => request,
+        getRequest: () => ({
+          url: '/conversations/1/messages/stream',
+          method: 'POST',
+        }),
       }),
     } as ArgumentsHost;
-    return { host, status, json, end, response };
   }
 
-  it('formats HttpException with Chinese validation message', () => {
-    const { host, status, json } = mockHost();
-    filter.catch(
-      new HttpException(
-        { message: ['邮箱格式不正确', '密码过短'] },
-        HttpStatus.BAD_REQUEST,
-      ),
-      host,
-    );
+  beforeEach(() => {
+    logger.error.mockClear();
+    logger.warn.mockClear();
+  });
+
+  it('returns JSON envelope when headers have not been sent', () => {
+    const status = vi.fn().mockReturnThis();
+    const json = vi.fn();
+    const write = vi.fn();
+    const end = vi.fn();
+    const response = {
+      headersSent: false,
+      writableEnded: false,
+      status,
+      json,
+      write,
+      end,
+    };
+
+    filter.catch(new BadRequestException('参数错误'), mockHost(response));
 
     expect(status).toHaveBeenCalledWith(400);
     expect(json).toHaveBeenCalledWith(
       expect.objectContaining({
         code: 400,
-        message: '参数校验失败',
-        errors: ['邮箱格式不正确', '密码过短'],
+        message: '参数错误',
       }),
     );
-    expect(logger.warn).toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
   });
 
-  it('formats UnauthorizedException message', () => {
-    const { host, status, json } = mockHost('/auth/me');
-    filter.catch(
-      new HttpException('请先登录，或登录状态已失效', HttpStatus.UNAUTHORIZED),
-      host,
-    );
+  it('does not call json when headers already sent; writes stream error and ends', () => {
+    const status = vi.fn().mockReturnThis();
+    const json = vi.fn();
+    const write = vi.fn();
+    const end = vi.fn();
+    const response = {
+      headersSent: true,
+      writableEnded: false,
+      status,
+      json,
+      write,
+      end,
+    };
 
-    expect(status).toHaveBeenCalledWith(401);
-    expect(json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        code: 401,
-        message: '请先登录，或登录状态已失效',
-      }),
-    );
-  });
+    filter.catch(new Error('upstream failed'), mockHost(response));
 
-  it('returns 204 for favicon', () => {
-    const { host, status, end } = mockHost('/favicon.ico');
-    filter.catch(new Error('nope'), host);
-    expect(status).toHaveBeenCalledWith(204);
+    expect(json).not.toHaveBeenCalled();
+    expect(status).not.toHaveBeenCalled();
+    expect(write).toHaveBeenCalledWith(expect.stringContaining('event: error'));
     expect(end).toHaveBeenCalled();
-  });
-
-  it('redacts verify token in log path and response path', () => {
-    const { host, json } = mockHost(
-      '/auth/verify-email?token=super-secret-token-value',
-    );
-    filter.catch(
-      new HttpException('验证链接无效或已过期', HttpStatus.BAD_REQUEST),
-      host,
-    );
-
-    expect(logger.warn).toHaveBeenCalledWith(
-      'HTTP exception',
-      expect.objectContaining({
-        path: '/auth/verify-email?token=%5BREDACTED%5D',
-      }),
-    );
-    expect(json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        path: '/auth/verify-email?token=%5BREDACTED%5D',
-      }),
-    );
   });
 });

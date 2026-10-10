@@ -28,7 +28,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const request = ctx.getRequest<Request>();
 
     if (request.url === '/favicon.ico') {
-      response.status(204).end();
+      if (!response.headersSent) {
+        response.status(204).end();
+      }
       return;
     }
 
@@ -47,11 +49,28 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode,
       message,
       stack: exception instanceof Error ? exception.stack : undefined,
+      headersSent: response.headersSent,
     };
     if (statusCode >= 500) {
       this.logger.error('Unhandled exception', logPayload);
     } else {
       this.logger.warn('HTTP exception', logPayload);
+    }
+
+    // Stream already started (AI SDK UI Message Stream / SSE): never call .json()
+    if (response.headersSent) {
+      if (!response.writableEnded) {
+        try {
+          // Best-effort notice; AI SDK clients may ignore unknown frames mid-stream
+          response.write(
+            `event: error\ndata: ${JSON.stringify({ message })}\n\n`,
+          );
+        } catch {
+          // ignore write failures on a half-closed socket
+        }
+        response.end();
+      }
+      return;
     }
 
     const body: ApiErrorResponse = {
