@@ -43,10 +43,11 @@ async function bootstrap() {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
-  if (corsOrigins.length > 0) {
+  if (!isProd) {
+    // Local/dev: reflect any Origin (Expo :8081, Vite, etc.) — ignore CORS_ORIGINS allowlist
+    app.enableCors({ origin: true, credentials: true });
+  } else if (corsOrigins.length > 0) {
     app.enableCors({ origin: corsOrigins, credentials: true });
-  } else if (!isProd) {
-    app.enableCors();
   } else {
     // Production without CORS_ORIGINS: same-origin only (no ACAO *)
     app.enableCors({ origin: false });

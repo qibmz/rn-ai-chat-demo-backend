@@ -57,25 +57,25 @@ Seed 默认账号：`admin@example.com` / `password123`（可用 `SEED_EMAIL` / 
 
 复制 `.env.example` 后按需填写。常用变量：
 
-| 变量                                       | 说明                                                       |
-| ------------------------------------------ | ---------------------------------------------------------- |
-| `DATABASE_URL`                             | PostgreSQL 连接串                                          |
-| `REDIS_URL` / `REDIS_HOST` + `REDIS_PORT`  | Redis                                                      |
-| `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` | JWT 密钥（本地务必改掉）                                   |
-| `SEED_EMAIL` / `SEED_PASSWORD`             | `prisma:seed` 演示用户                                     |
-| `SENTRY_DSN`                               | 可选；空则禁用 Sentry                                      |
-| `SENTRY_TRACES_SAMPLE_RATE`                | 默认 `0.1`                                                 |
-| `RESEND_API_KEY`                           | 可选；空则邮件 job 只打日志                                |
-| `APP_NAME`                                 | 产品展示名（邮件 / Swagger / 日志），默认见 `.env.example` |
-| `APP_URL`                                  | 邮件确认链接前缀，默认 `http://localhost:3000`             |
-| `EMAIL_VERIFY_EXPIRES_IN`                  | 确认 token 有效期，默认 `24h`                              |
-| `EMAIL_VERIFY_COOLDOWN`                    | 重发确认邮件冷却，默认 `60s`                               |
-| `EMAIL_VERIFICATION_REQUIRED`              | `true` 时未验证邮箱禁止登录（403），默认 `false`           |
-| `PASSWORD_RESET_EXPIRES_IN`                | 忘记密码验证码有效期，默认 `15m`（8 位数字码）             |
-| `PASSWORD_RESET_COOLDOWN`                  | 忘记密码发送冷却，默认 `60s`                               |
-| `CORS_ORIGINS`                             | 逗号分隔允许源；生产未配则同源 only                        |
-| `THROTTLE_TTL_MS` / `THROTTLE_LIMIT`       | 全局 HTTP 限流（Redis 共享，默认 60s / 100）               |
-| `MAIL_FROM`                                | 发件人；为空时回退为 `APP_NAME <onboarding@resend.dev>`    |
+| 变量                                       | 说明                                                                       |
+| ------------------------------------------ | -------------------------------------------------------------------------- |
+| `DATABASE_URL`                             | PostgreSQL 连接串                                                          |
+| `REDIS_URL` / `REDIS_HOST` + `REDIS_PORT`  | Redis                                                                      |
+| `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` | JWT 密钥（本地务必改掉）                                                   |
+| `SEED_EMAIL` / `SEED_PASSWORD`             | `prisma:seed` 演示用户                                                     |
+| `SENTRY_DSN`                               | 可选；空则禁用 Sentry                                                      |
+| `SENTRY_TRACES_SAMPLE_RATE`                | 默认 `0.1`                                                                 |
+| `RESEND_API_KEY`                           | 可选；空则邮件 job 只打日志                                                |
+| `APP_NAME`                                 | 产品展示名（邮件 / Swagger / 日志），默认见 `.env.example`                 |
+| `APP_URL`                                  | 邮件确认链接前缀，默认 `http://localhost:3000`                             |
+| `EMAIL_VERIFY_EXPIRES_IN`                  | 确认 token 有效期，默认 `24h`                                              |
+| `EMAIL_VERIFY_COOLDOWN`                    | 重发确认邮件冷却，默认 `60s`                                               |
+| `EMAIL_VERIFICATION_REQUIRED`              | `true` 时未验证邮箱禁止登录（403），默认 `false`                           |
+| `PASSWORD_RESET_EXPIRES_IN`                | 忘记密码验证码有效期，默认 `15m`（8 位数字码）                             |
+| `PASSWORD_RESET_COOLDOWN`                  | 忘记密码发送冷却，默认 `60s`                                               |
+| `CORS_ORIGINS`                             | 生产允许源（逗号分隔）；开发环境忽略并放行任意 Origin；生产未配则同源 only |
+| `THROTTLE_TTL_MS` / `THROTTLE_LIMIT`       | 全局 HTTP 限流（Redis 共享，默认 60s / 100）                               |
+| `MAIL_FROM`                                | 发件人；为空时回退为 `APP_NAME <onboarding@resend.dev>`                    |
 
 ### Sentry Cloud（可选）
 
