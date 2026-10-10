@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -14,14 +15,18 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
+import { AiUiStream } from '../common/decorators/ai-ui-stream.decorator.js';
 import {
   AuthUser,
   CurrentUser,
 } from '../common/decorators/current-user.decorator.js';
 import { ChatConversationsService } from './chat-conversations.service.js';
 import { ChatMessagesService } from './chat-messages.service.js';
+import { ChatStreamService } from './chat-stream.service.js';
 import { CreateConversationDto } from './dto/create-conversation.dto.js';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto.js';
+import { StreamMessagesDto } from './dto/stream-messages.dto.js';
 import { UpdateConversationDto } from './dto/update-conversation.dto.js';
 
 @ApiTags('聊天')
@@ -31,6 +36,7 @@ export class ChatConversationsController {
   constructor(
     private readonly conversationsService: ChatConversationsService,
     private readonly messagesService: ChatMessagesService,
+    private readonly streamService: ChatStreamService,
   ) {}
 
   @Post()
@@ -70,5 +76,19 @@ export class ChatConversationsController {
     @Query() query: ListMessagesQueryDto,
   ) {
     return this.messagesService.list(user.userId, id, query);
+  }
+
+  @Post(':id/messages/stream')
+  @AiUiStream()
+  @ApiOperation({
+    summary: '流式发送消息（DeepSeek + AI SDK UI Message Stream）',
+  })
+  stream(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: StreamMessagesDto,
+    @Res({ passthrough: false }) res: Response,
+  ) {
+    return this.streamService.stream(user.userId, id, dto, res);
   }
 }

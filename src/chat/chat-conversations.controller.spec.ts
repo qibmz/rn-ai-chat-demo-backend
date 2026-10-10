@@ -11,6 +11,7 @@ import { TransformInterceptor } from '../common/interceptors/transform.intercept
 import { ChatConversationsController } from './chat-conversations.controller.js';
 import { ChatConversationsService } from './chat-conversations.service.js';
 import { ChatMessagesService } from './chat-messages.service.js';
+import { ChatStreamService } from './chat-stream.service.js';
 
 describe('ChatConversationsController (HTTP)', () => {
   let app: INestApplication;
@@ -21,6 +22,7 @@ describe('ChatConversationsController (HTTP)', () => {
     update: ReturnType<typeof vi.fn>;
   };
   let messagesService: { list: ReturnType<typeof vi.fn> };
+  let streamService: { stream: ReturnType<typeof vi.fn> };
   let authUser: { userId: string; email: string } | null;
 
   const conversationId = 'bbbbbbbb-bbbb-4222-8222-bbbbbbbbbbbb';
@@ -45,12 +47,16 @@ describe('ChatConversationsController (HTTP)', () => {
     messagesService = {
       list: vi.fn().mockResolvedValue({ items: [], hasMore: false }),
     };
+    streamService = {
+      stream: vi.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ChatConversationsController],
       providers: [
         { provide: ChatConversationsService, useValue: conversationsService },
         { provide: ChatMessagesService, useValue: messagesService },
+        { provide: ChatStreamService, useValue: streamService },
         { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },
         {
           provide: APP_GUARD,
@@ -129,5 +135,27 @@ describe('ChatConversationsController (HTTP)', () => {
     await request(app.getHttpServer())
       .get(`/chat/conversations/${conversationId}`)
       .expect(401);
+  });
+
+  it('POST /chat/conversations/:id/messages/stream returns 401 without auth', async () => {
+    authUser = null;
+    await request(app.getHttpServer())
+      .post(`/chat/conversations/${conversationId}/messages/stream`)
+      .send({
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+      })
+      .expect(401);
+    expect(streamService.stream).not.toHaveBeenCalled();
+  });
+
+  it('POST /chat/conversations/:id/messages/stream returns 404 when conversation missing', async () => {
+    streamService.stream.mockRejectedValue(new NotFoundException('对话不存在'));
+    const res = await request(app.getHttpServer())
+      .post(`/chat/conversations/${conversationId}/messages/stream`)
+      .send({
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+      })
+      .expect(404);
+    expect(res.body.message).toBe('对话不存在');
   });
 });
