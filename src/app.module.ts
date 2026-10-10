@@ -5,6 +5,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { SentryModule } from '@sentry/nestjs/setup';
 import { WinstonModule } from 'nest-winston';
 import { AuthModule } from './auth/auth.module.js';
+import { ChatModule } from './chat/chat.module.js';
 import { validateEnv } from './common/config/env.validation.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
@@ -44,6 +45,7 @@ import { UsersModule } from './users/users.module.js';
     QueueModule,
     UsersModule,
     AuthModule,
+    ChatModule,
     HealthModule,
   ],
   providers: [
