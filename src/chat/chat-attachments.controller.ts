@@ -15,6 +15,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import {
   AuthUser,
@@ -25,11 +26,13 @@ import { ChatFileUploadInterceptor } from './chat-file-upload.interceptor.js';
 
 @ApiTags('聊天')
 @ApiBearerAuth()
+@Throttle({ default: { limit: 60, ttl: 60000 } })
 @Controller('chat/attachments')
 export class ChatAttachmentsController {
   constructor(private readonly attachmentsService: ChatAttachmentsService) {}
 
   @Post()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: '上传聊天图片附件' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({

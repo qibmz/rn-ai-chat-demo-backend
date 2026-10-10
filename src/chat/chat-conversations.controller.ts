@@ -15,6 +15,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { AiUiStream } from '../common/decorators/ai-ui-stream.decorator.js';
 import {
@@ -31,6 +32,7 @@ import { UpdateConversationDto } from './dto/update-conversation.dto.js';
 
 @ApiTags('聊天')
 @ApiBearerAuth()
+@Throttle({ default: { limit: 60, ttl: 60000 } })
 @Controller('chat/conversations')
 export class ChatConversationsController {
   constructor(
@@ -40,6 +42,7 @@ export class ChatConversationsController {
   ) {}
 
   @Post()
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({ summary: '创建会话' })
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateConversationDto) {
     return this.conversationsService.create(user.userId, dto);
@@ -58,6 +61,7 @@ export class ChatConversationsController {
   }
 
   @Patch(':id')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({ summary: '更新会话标题或软删除' })
   update(
     @CurrentUser() user: AuthUser,
@@ -79,6 +83,7 @@ export class ChatConversationsController {
   }
 
   @Post(':id/messages/stream')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @AiUiStream()
   @ApiOperation({
     summary: '流式发送消息（DeepSeek + AI SDK UI Message Stream）',

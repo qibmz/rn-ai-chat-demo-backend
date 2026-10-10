@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { SentryModule } from '@sentry/nestjs/setup';
 import { WinstonModule } from 'nest-winston';
 import { AuthModule } from './auth/auth.module.js';
@@ -16,6 +16,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { QueueModule } from './queues/queue.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { RedisThrottlerStorage } from './common/throttler/redis-throttler.storage.js';
+import { UserAwareThrottlerGuard } from './common/throttler/user-aware.throttler.guard.js';
 import { UsersModule } from './users/users.module.js';
 
 @Module({
@@ -38,6 +39,7 @@ import { UsersModule } from './users/users.module.js';
           },
         ],
         storage,
+        skipIf: () => configService.get('NODE_ENV') === 'test',
       }),
     }),
     WinstonModule.forRoot(createWinstonConfig()),
@@ -51,8 +53,8 @@ import { UsersModule } from './users/users.module.js';
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: UserAwareThrottlerGuard },
   ],
 })
 export class AppModule {}
