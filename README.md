@@ -160,7 +160,7 @@ Seed 默认账号：`admin@example.com` / `password123`（可用 `SEED_EMAIL` / 
 | `resetsAt`                         | 下次重置时间（ISO 8601，下周一 0 点上海） |
 | `resetsInSeconds`                  | 距离重置的秒数                            |
 
-内部按 token 用量与 `CHAT_USER_WEEKLY_BUDGET_CNY` 折算微元记账；**超预算为软限制**（仍可请求，百分比可超过 100），便于前端展示而非硬切断。
+内部按 token 用量与 `CHAT_USER_WEEKLY_BUDGET_CNY` 折算微元记账。周累计写入 Postgres `chat_weekly_spends`（账本），Redis 仅作热缓存；缓存 miss / flush 后从库回填，避免额度被「清零重计」。开流前若已用 ≥ 预算返回 429；并发竞态下可能略超（软限制），进度百分比可超过 100。
 
 ### 附件
 

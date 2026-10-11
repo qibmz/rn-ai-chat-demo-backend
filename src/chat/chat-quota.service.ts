@@ -1,11 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { RedisService } from '../redis/redis.service.js';
-import {
-  getShanghaiWeekInfo,
-  roundRatio4,
-  spendRedisKey,
-} from './utils/week-quota.util.js';
+import { ChatBillingService } from './chat-billing.service.js';
+import { getShanghaiWeekInfo, roundRatio4 } from './utils/week-quota.util.js';
 
 export type ChatQuotaDto = {
   usedPercent: number;
@@ -18,21 +13,12 @@ export type ChatQuotaDto = {
 
 @Injectable()
 export class ChatQuotaService {
-  constructor(
-    private readonly redis: RedisService,
-    private readonly configService: ConfigService,
-  ) {}
+  constructor(private readonly billing: ChatBillingService) {}
 
   async getQuota(userId: string): Promise<ChatQuotaDto> {
     const week = getShanghaiWeekInfo();
-    const key = spendRedisKey(userId, week.redisWeekKey);
-    const raw = await this.redis.get(key);
-    const spendMicros = BigInt(raw && /^\d+$/.test(raw) ? raw : '0');
-
-    const budgetCny = Number(
-      this.configService.get('CHAT_USER_WEEKLY_BUDGET_CNY', '10'),
-    );
-    const budgetMicros = BigInt(Math.max(0, budgetCny)) * 1_000_000n;
+    const spendMicros = await this.billing.getWeeklySpendMicros(userId);
+    const budgetMicros = this.billing.getWeeklyBudgetMicros();
 
     let usedRatio = 0;
     if (budgetMicros > 0n) {

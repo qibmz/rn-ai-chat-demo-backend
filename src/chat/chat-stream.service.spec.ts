@@ -49,6 +49,7 @@ describe('ChatStreamService', () => {
     getWeeklyBudgetMicros: ReturnType<typeof vi.fn>;
     computeCostMicros: ReturnType<typeof vi.fn>;
     getPriceVersion: ReturnType<typeof vi.fn>;
+    incrementWeeklySpend: ReturnType<typeof vi.fn>;
     recordSpend: ReturnType<typeof vi.fn>;
   };
 
@@ -89,6 +90,7 @@ describe('ChatStreamService', () => {
       getWeeklyBudgetMicros: vi.fn().mockReturnValue(10_000_000n),
       computeCostMicros: vi.fn().mockReturnValue(0n),
       getPriceVersion: vi.fn().mockReturnValue('test'),
+      incrementWeeklySpend: vi.fn().mockResolvedValue(undefined),
       recordSpend: vi.fn().mockResolvedValue(undefined),
     };
 

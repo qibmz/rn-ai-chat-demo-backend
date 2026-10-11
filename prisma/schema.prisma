@@ -17,8 +17,26 @@ model User {
 
   conversations Conversation[]
   attachments   Attachment[]
+  weeklySpends  ChatWeeklySpend[]
 
   @@map("users")
+}
+
+/// 用户自然周（上海时区）对话花费汇总；Redis 仅作热缓存，miss 时从此表回填。
+model ChatWeeklySpend {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  /// 如 2026-W41（与 getShanghaiWeekInfo().period 一致）
+  period      String
+  spendMicros BigInt   @default(0) @map("spend_micros")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, period])
+  @@index([period])
+  @@map("chat_weekly_spends")
 }
 
 model Conversation {

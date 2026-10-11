@@ -604,6 +604,7 @@ export class ChatStreamService {
         where: { id: args.conversationId },
         data: { updatedAt: new Date() },
       });
+      await this.billing.incrementWeeklySpend(tx, args.userId, costMicros);
     });
 
     await this.billing.recordSpend(args.userId, costMicros);

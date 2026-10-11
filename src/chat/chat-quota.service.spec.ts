@@ -1,29 +1,23 @@
-import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { RedisService } from '../redis/redis.service.js';
+import { ChatBillingService } from './chat-billing.service.js';
 import { ChatQuotaService } from './chat-quota.service.js';
 
 describe('ChatQuotaService', () => {
   let service: ChatQuotaService;
-  let redis: { get: ReturnType<typeof vi.fn> };
+  let billing: {
+    getWeeklySpendMicros: ReturnType<typeof vi.fn>;
+    getWeeklyBudgetMicros: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(async () => {
-    redis = { get: vi.fn().mockResolvedValue('5000000') };
+    billing = {
+      getWeeklySpendMicros: vi.fn().mockResolvedValue(5_000_000n),
+      getWeeklyBudgetMicros: vi.fn().mockReturnValue(10_000_000n),
+    };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatQuotaService,
-        { provide: RedisService, useValue: redis },
-        {
-          provide: ConfigService,
-          useValue: {
-            get: vi.fn((key: string, fb?: string) => {
-              if (key === 'CHAT_USER_WEEKLY_BUDGET_CNY') {
-                return '10';
-              }
-              return fb;
-            }),
-          },
-        },
+        { provide: ChatBillingService, useValue: billing },
       ],
     }).compile();
 
@@ -33,15 +27,13 @@ describe('ChatQuotaService', () => {
   it('returns quota percentages without money fields', async () => {
     const result = await service.getQuota('user-1');
     expect(result).toMatchObject({
-      usedPercent: expect.any(Number),
-      remainingPercent: expect.any(Number),
-      usedRatio: expect.any(Number),
+      usedPercent: 50,
+      remainingPercent: 50,
+      usedRatio: 0.5,
       period: expect.stringMatching(/^\d{4}-W\d{2}$/),
       resetsInSeconds: expect.any(Number),
     });
     expect(result).not.toHaveProperty('budgetCny');
-    expect(redis.get).toHaveBeenCalledWith(
-      expect.stringMatching(/^chat:spend:user-1:/),
-    );
+    expect(billing.getWeeklySpendMicros).toHaveBeenCalledWith('user-1');
   });
 });
