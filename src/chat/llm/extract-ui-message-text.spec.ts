@@ -15,7 +15,7 @@ describe('extractUiMessageText', () => {
     ).toEqual({ text: '你好世界', reasoningText: '想一想' });
   });
 
-  it('returns empty strings when parts missing', () => {
+  it('returns empty text and null reasoning when parts empty', () => {
     expect(
       extractUiMessageText({ id: 'a', role: 'assistant', parts: [] }),
     ).toEqual({ text: '', reasoningText: null });
