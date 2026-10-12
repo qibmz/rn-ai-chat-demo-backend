@@ -251,10 +251,14 @@ describe('ChatStreamService', () => {
         },
         mockRes(),
       ),
-    ).rejects.toMatchObject({
-      status: 429,
-      message: '当前对话请求过多，请稍后再试',
-    } satisfies Partial<HttpException>);
+    ).rejects.toSatisfy((err: unknown) => {
+      expect(err).toBeInstanceOf(HttpException);
+      expect((err as HttpException).getStatus()).toBe(429);
+      expect((err as HttpException).message).toBe(
+        '当前对话请求过多，请稍后再试',
+      );
+      return true;
+    });
     expect(redis.decr).toHaveBeenCalled();
     expect(pipeMock).not.toHaveBeenCalled();
   });

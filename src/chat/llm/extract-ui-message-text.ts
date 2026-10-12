@@ -1,4 +1,6 @@
 export type UiMessageLike = {
+  id?: string;
+  role?: string;
   parts?: Array<{ type?: string; text?: string }>;
 };
 

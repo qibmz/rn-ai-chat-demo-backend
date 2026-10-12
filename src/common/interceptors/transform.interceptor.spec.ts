@@ -21,7 +21,7 @@ describe('TransformInterceptor', () => {
       }),
       getHandler: () => handler,
       getClass: () => class TestController {},
-    } as ExecutionContext;
+    } as unknown as ExecutionContext;
   }
 
   it('wraps successful responses in unified envelope', async () => {
