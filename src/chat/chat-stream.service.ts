@@ -453,7 +453,9 @@ export class ChatStreamService {
             image: string;
             mediaType?: string;
             providerOptions?: {
-              deepseek: { imageDetail: 'low' | 'high' | 'auto' };
+              deepseek: {
+                imageDetail: 'low' | 'high' | 'original' | 'auto';
+              };
             };
           }
       > = [];
@@ -469,7 +471,9 @@ export class ChatStreamService {
             continue;
           }
           const detail =
-            imageDetail === 'high' || imageDetail === 'auto'
+            imageDetail === 'high' ||
+            imageDetail === 'original' ||
+            imageDetail === 'auto'
               ? imageDetail
               : 'low';
           content.push({

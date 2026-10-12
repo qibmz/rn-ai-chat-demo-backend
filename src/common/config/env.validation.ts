@@ -115,6 +115,8 @@ export function validateEnv(env: Record<string, unknown>) {
   requireJwtSecret(env, 'JWT_ACCESS_SECRET');
   requireJwtSecret(env, 'JWT_REFRESH_SECRET');
   requireApiKey(env, 'LLM_API_KEY');
+  requireString(env, 'LLM_BASE_URL', 8);
+  requireString(env, 'LLM_MODEL', 1);
 
   optionalDuration(env, 'JWT_ACCESS_EXPIRES_IN');
   optionalDuration(env, 'JWT_REFRESH_EXPIRES_IN');

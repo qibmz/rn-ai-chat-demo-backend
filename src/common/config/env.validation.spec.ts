@@ -7,6 +7,8 @@ const base = {
   JWT_ACCESS_SECRET: 'local-dev-access-secret-not-in-example!!',
   JWT_REFRESH_SECRET: 'local-dev-refresh-secret-not-in-example!',
   LLM_API_KEY: 'test-llm-key-not-placeholder',
+  LLM_BASE_URL: 'https://api.deepseek.com/v1',
+  LLM_MODEL: 'deepseek-flash',
   CHAT_ATTACHMENT_STORAGE: 'disabled',
 };
 
@@ -57,8 +59,6 @@ describe('validateEnv', () => {
       validateEnv({
         ...base,
         LLM_PROVIDER: 'deepseek',
-        LLM_BASE_URL: 'https://api.deepseek.com/v1',
-        LLM_MODEL: 'deepseek-flash',
       }),
     ).not.toThrow();
   });
@@ -66,6 +66,28 @@ describe('validateEnv', () => {
   it('rejects unknown LLM_PROVIDER', () => {
     expect(() => validateEnv({ ...base, LLM_PROVIDER: 'qwen' })).toThrow(
       /LLM_PROVIDER/,
+    );
+  });
+
+  it('rejects missing LLM_BASE_URL', () => {
+    const { LLM_BASE_URL: _, ...without } = base;
+    expect(() => validateEnv(without)).toThrow(/LLM_BASE_URL/);
+  });
+
+  it('rejects short LLM_BASE_URL', () => {
+    expect(() => validateEnv({ ...base, LLM_BASE_URL: 'http://' })).toThrow(
+      /LLM_BASE_URL/,
+    );
+  });
+
+  it('rejects missing LLM_MODEL', () => {
+    const { LLM_MODEL: _, ...without } = base;
+    expect(() => validateEnv(without)).toThrow(/LLM_MODEL/);
+  });
+
+  it('rejects empty LLM_MODEL', () => {
+    expect(() => validateEnv({ ...base, LLM_MODEL: '   ' })).toThrow(
+      /LLM_MODEL/,
     );
   });
 
