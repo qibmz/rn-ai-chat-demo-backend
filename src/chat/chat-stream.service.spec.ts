@@ -353,6 +353,93 @@ describe('ChatStreamService', () => {
     ).toHaveLength(1);
   });
 
+  it('persists once on onEnd success using onFinish usage', async () => {
+    const costMicros = 12_345n;
+    billing.computeCostMicros.mockReturnValue(costMicros);
+
+    await runHappyStream();
+
+    const streamTextArgs = streamTextMock.mock.calls[0]?.[0] as {
+      onFinish?: (args: { usage: unknown }) => void;
+    };
+    expect(streamTextArgs.onFinish).toEqual(expect.any(Function));
+    expect(capturedOnEnd).toEqual(expect.any(Function));
+
+    const usage = {
+      inputTokens: 100,
+      outputTokens: 50,
+      totalTokens: 150,
+      inputTokenDetails: {
+        cacheReadTokens: 20,
+        noCacheTokens: 80,
+      },
+      outputTokenDetails: {
+        textTokens: 40,
+        reasoningTokens: 10,
+      },
+    };
+    streamTextArgs.onFinish?.({ usage });
+
+    await capturedOnEnd?.({
+      isAborted: false,
+      responseMessage: { parts: [{ type: 'text', text: '完整回答' }] },
+    });
+
+    const expectedMappedUsage = {
+      promptTokens: 100,
+      totalTokens: 150,
+      promptCacheHitTokens: 20,
+      promptCacheMissTokens: 80,
+      completionTokens: 40,
+      reasoningTokens: 10,
+    };
+
+    expect(billing.computeCostMicros).toHaveBeenCalledWith(expectedMappedUsage);
+    expect(billing.incrementWeeklySpend).toHaveBeenCalledTimes(1);
+    expect(billing.incrementWeeklySpend).toHaveBeenCalledWith(
+      expect.anything(),
+      userId,
+      costMicros,
+    );
+    expect(billing.recordSpend).toHaveBeenCalledTimes(1);
+    expect(billing.recordSpend).toHaveBeenCalledWith(userId, costMicros);
+
+    const assistantCreates = txMessageCreate.mock.calls.filter(
+      (call) => call[0]?.data?.role === MessageRole.assistant,
+    );
+    expect(assistantCreates).toHaveLength(1);
+    expect(assistantCreates[0]?.[0]).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          role: MessageRole.assistant,
+          content: '完整回答',
+          finishReason: 'stop',
+          promptTokens: 100,
+          completionTokens: 40,
+          totalTokens: 150,
+          promptCacheHitTokens: 20,
+          promptCacheMissTokens: 80,
+          reasoningTokens: 10,
+          costMicros,
+        }),
+      }),
+    );
+
+    await capturedOnEnd?.({
+      isAborted: false,
+      responseMessage: { parts: [{ type: 'text', text: '完整回答' }] },
+    });
+
+    expect(billing.recordSpend).toHaveBeenCalledTimes(1);
+    expect(billing.incrementWeeklySpend).toHaveBeenCalledTimes(1);
+    expect(billing.computeCostMicros).toHaveBeenCalledTimes(1);
+    expect(
+      txMessageCreate.mock.calls.filter(
+        (call) => call[0]?.data?.role === MessageRole.assistant,
+      ),
+    ).toHaveLength(1);
+  });
+
   it('buildModelMessages does not put historical reasoning into model messages', async () => {
     const secretCot = 'SECRET_COT_SHOULD_NOT_APPEAR';
     await runHappyStream({
