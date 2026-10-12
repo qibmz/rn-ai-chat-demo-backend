@@ -1,4 +1,3 @@
-import { createOpenAI } from '@ai-sdk/openai';
 import {
   HttpException,
   HttpStatus,
@@ -23,10 +22,13 @@ import { RedisService } from '../redis/redis.service.js';
 import { ChatAttachmentsService } from './chat-attachments.service.js';
 import { ChatBillingService } from './chat-billing.service.js';
 import { StreamMessagesDto } from './dto/stream-messages.dto.js';
+import { createLanguageModel } from './llm/create-language-model.js';
+import { extractUiMessageText } from './llm/extract-ui-message-text.js';
 import {
-  streamLockRedisKey,
-  type ChatUsageForBilling,
-} from './utils/chat-billing.util.js';
+  mapLanguageModelUsage,
+  type MappedLlmUsage,
+} from './llm/map-language-model-usage.js';
+import { streamLockRedisKey } from './utils/chat-billing.util.js';
 
 type StoredPart =
   { type: 'text'; text: string } | { type: 'image'; attachmentId: string };
@@ -147,50 +149,46 @@ export class ChatStreamService {
       };
       res.on('close', onClose);
 
-      const apiKey = this.configService.getOrThrow<string>('DEEPSEEK_API_KEY');
-      const baseURL = this.configService.get<string>(
-        'DEEPSEEK_BASE_URL',
-        'https://api.deepseek.com/v1',
-      );
-      const modelId = this.configService.get<string>(
-        'DEEPSEEK_MODEL',
-        'deepseek-flash',
-      );
+      const apiKey = this.configService.getOrThrow<string>('LLM_API_KEY');
+      const baseURL = this.configService.getOrThrow<string>('LLM_BASE_URL');
+      const modelId = this.configService.getOrThrow<string>('LLM_MODEL');
+      const provider =
+        this.configService.get<string>('LLM_PROVIDER')?.trim() || 'deepseek';
       const maxOutputTokens = Number(
         this.configService.get('CHAT_MAX_TOKENS', '4096'),
       );
 
-      const deepseek = createOpenAI({
+      const model = createLanguageModel({
+        provider,
         apiKey,
         baseURL,
-        name: 'deepseek',
-        fetch: async (input, init) => {
-          if (init?.body && typeof init.body === 'string') {
-            try {
-              const body = JSON.parse(init.body) as Record<string, unknown>;
-              body.thinking = {
-                type: thinking ? 'enabled' : 'disabled',
-              };
-              return fetch(input, {
-                ...init,
-                body: JSON.stringify(body),
-              });
-            } catch {
-              // fall through
-            }
-          }
-          return fetch(input, init);
-        },
+        modelId,
       });
 
-      const providerOptions = {
-        openai: {
-          forceReasoning: true,
-          systemMessageMode: 'system' as const,
-          ...(thinking
-            ? { reasoningEffort }
-            : { reasoningEffort: 'none' as const }),
-        },
+      let lastUsage: LanguageModelUsage | undefined;
+      let persisted = false;
+
+      const persistOnce = async (args: {
+        text: string;
+        reasoningText: string | null;
+        finishReason: string | null;
+      }) => {
+        if (persisted) {
+          return;
+        }
+        persisted = true;
+        const mapped = mapLanguageModelUsage(lastUsage);
+        await this.persistAssistantMessage({
+          assistantMessageId,
+          conversationId,
+          text: args.text,
+          reasoningText: args.reasoningText,
+          thinking,
+          reasoningEffort: thinking ? reasoningEffort : null,
+          finishReason: args.finishReason,
+          usage: mapped,
+          userId,
+        });
       };
 
       try {
@@ -206,28 +204,21 @@ export class ChatStreamService {
             });
 
             const result = streamText({
-              model: deepseek.chat(modelId),
+              model,
               messages: modelMessages,
               maxOutputTokens,
               abortSignal: abortController.signal,
-              providerOptions,
-              onFinish: async ({
-                text,
-                reasoningText,
-                usage,
-                finishReason,
-              }) => {
-                await this.persistAssistantMessage({
-                  assistantMessageId,
-                  conversationId,
-                  text: text ?? '',
-                  reasoningText: reasoningText ?? null,
-                  thinking,
-                  reasoningEffort: thinking ? reasoningEffort : null,
-                  finishReason: finishReason ?? null,
-                  usage,
-                  userId,
-                });
+              providerOptions: {
+                deepseek: {
+                  thinking: { type: thinking ? 'enabled' : 'disabled' },
+                  ...(thinking ? { reasoningEffort } : {}),
+                  userId:
+                    userId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 512) ||
+                    'anonymous',
+                },
+              },
+              onFinish: ({ usage }) => {
+                lastUsage = usage;
               },
             });
 
@@ -241,6 +232,18 @@ export class ChatStreamService {
               }),
             );
           },
+          onEnd: async ({ isAborted, responseMessage }) => {
+            const { text, reasoningText } =
+              extractUiMessageText(responseMessage);
+            await persistOnce({
+              text,
+              reasoningText,
+              finishReason: isAborted ? 'aborted' : 'stop',
+            });
+          },
+          onError: (error) =>
+            error instanceof Error ? error.message : String(error),
+          generateId: () => assistantMessageId,
         });
 
         await pipeUIMessageStreamToResponse({
@@ -437,6 +440,7 @@ export class ChatStreamService {
         continue;
       }
       if (msg.role === MessageRole.assistant) {
+        // Visible content only — never attach historical reasoningContent.
         messages.push({ role: 'assistant', content: msg.content });
         continue;
       }
@@ -449,7 +453,7 @@ export class ChatStreamService {
             image: string;
             mediaType?: string;
             providerOptions?: {
-              openai: { imageDetail: 'low' | 'high' | 'auto' };
+              deepseek: { imageDetail: 'low' | 'high' | 'auto' };
             };
           }
       > = [];
@@ -473,7 +477,7 @@ export class ChatStreamService {
             image: info.url,
             mediaType: info.mimeType,
             providerOptions: {
-              openai: { imageDetail: detail },
+              deepseek: { imageDetail: detail },
             },
           });
         }
@@ -521,43 +525,6 @@ export class ChatStreamService {
     return out;
   }
 
-  private usageForBilling(usage: LanguageModelUsage): ChatUsageForBilling {
-    const reasoningTokens = usage.outputTokenDetails?.reasoningTokens ?? 0;
-    const textTokens = usage.outputTokenDetails?.textTokens;
-    const outputTokens = usage.outputTokens ?? 0;
-
-    // Prefer explicit text tokens; otherwise subtract reasoning from output total.
-    let completionTokens =
-      typeof textTokens === 'number'
-        ? textTokens
-        : Math.max(0, outputTokens - (reasoningTokens || 0));
-
-    // If provider only reports outputTokens without details, treat as completion.
-    if (
-      typeof textTokens !== 'number' &&
-      !(reasoningTokens > 0) &&
-      outputTokens > 0
-    ) {
-      completionTokens = outputTokens;
-    }
-
-    const cacheRead = usage.inputTokenDetails?.cacheReadTokens ?? 0;
-    const noCache = usage.inputTokenDetails?.noCacheTokens;
-    const inputTokens = usage.inputTokens ?? 0;
-    const promptCacheHitTokens = cacheRead;
-    const promptCacheMissTokens =
-      typeof noCache === 'number'
-        ? noCache
-        : Math.max(0, inputTokens - cacheRead);
-
-    return {
-      promptCacheMissTokens,
-      promptCacheHitTokens,
-      completionTokens,
-      reasoningTokens,
-    };
-  }
-
   private async persistAssistantMessage(args: {
     assistantMessageId: string;
     conversationId: string;
@@ -566,15 +533,12 @@ export class ChatStreamService {
     thinking: boolean;
     reasoningEffort: string | null;
     finishReason: string | null;
-    usage: LanguageModelUsage;
+    usage: MappedLlmUsage;
     userId: string;
   }): Promise<void> {
-    const billed = this.usageForBilling(args.usage);
+    const billed = args.usage;
     const costMicros = this.billing.computeCostMicros(billed);
     const priceVersion = this.billing.getPriceVersion();
-
-    const promptTokens = args.usage.inputTokens ?? null;
-    const totalTokens = args.usage.totalTokens ?? null;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.message.create({
@@ -590,9 +554,9 @@ export class ChatStreamService {
           thinkingEnabled: args.thinking,
           reasoningEffort: args.reasoningEffort,
           finishReason: args.finishReason,
-          promptTokens,
+          promptTokens: billed.promptTokens,
           completionTokens: billed.completionTokens,
-          totalTokens,
+          totalTokens: billed.totalTokens,
           promptCacheHitTokens: billed.promptCacheHitTokens,
           promptCacheMissTokens: billed.promptCacheMissTokens,
           reasoningTokens: billed.reasoningTokens ?? 0,

@@ -1,5 +1,6 @@
 import { HttpException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { MessageRole } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import type { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -12,7 +13,7 @@ const streamTextMock = vi.fn();
 const pipeMock = vi.fn();
 const toUIMessageStreamMock = vi.fn();
 const createUIMessageStreamMock = vi.fn();
-const createOpenAIMock = vi.fn();
+const createLanguageModelMock = vi.fn();
 
 vi.mock('ai', () => ({
   streamText: (...args: unknown[]) => streamTextMock(...args),
@@ -22,9 +23,22 @@ vi.mock('ai', () => ({
     createUIMessageStreamMock(...args),
 }));
 
-vi.mock('@ai-sdk/openai', () => ({
-  createOpenAI: (...args: unknown[]) => createOpenAIMock(...args),
+vi.mock('./llm/create-language-model.js', () => ({
+  createLanguageModel: (...args: unknown[]) => createLanguageModelMock(...args),
 }));
+
+type UiStreamWriter = {
+  write: ReturnType<typeof vi.fn>;
+  merge: ReturnType<typeof vi.fn>;
+};
+
+type CreateUiStreamArgs = {
+  execute: (args: { writer: UiStreamWriter }) => void;
+  onEnd?: (args: {
+    isAborted: boolean;
+    responseMessage: { parts?: Array<{ type: string; text?: string }> };
+  }) => void | Promise<void>;
+};
 
 describe('ChatStreamService', () => {
   let service: ChatStreamService;
@@ -52,12 +66,18 @@ describe('ChatStreamService', () => {
     incrementWeeklySpend: ReturnType<typeof vi.fn>;
     recordSpend: ReturnType<typeof vi.fn>;
   };
+  let txMessageCreate: ReturnType<typeof vi.fn>;
+  let capturedOnEnd: CreateUiStreamArgs['onEnd'];
+  let lastWriter: UiStreamWriter;
 
   const conversationId = 'bbbbbbbb-bbbb-4222-8222-bbbbbbbbbbbb';
   const userId = '11111111-1111-4111-8111-111111111111';
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    capturedOnEnd = undefined;
+    lastWriter = { write: vi.fn(), merge: vi.fn() };
+    txMessageCreate = vi.fn().mockResolvedValue({});
 
     prisma = {
       conversation: {
@@ -73,7 +93,7 @@ describe('ChatStreamService', () => {
       },
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
         fn({
-          message: { create: vi.fn().mockResolvedValue({}) },
+          message: { create: txMessageCreate },
           attachment: { updateMany: vi.fn().mockResolvedValue({}) },
           conversation: { update: vi.fn().mockResolvedValue({}) },
         }),
@@ -94,26 +114,14 @@ describe('ChatStreamService', () => {
       recordSpend: vi.fn().mockResolvedValue(undefined),
     };
 
-    createOpenAIMock.mockReturnValue({
-      chat: vi.fn().mockReturnValue('model'),
-    });
+    createLanguageModelMock.mockReturnValue('language-model');
 
-    createUIMessageStreamMock.mockImplementation(
-      ({
-        execute,
-      }: {
-        execute: (args: {
-          writer: {
-            write: ReturnType<typeof vi.fn>;
-            merge: ReturnType<typeof vi.fn>;
-          };
-        }) => void;
-      }) => {
-        const writer = { write: vi.fn(), merge: vi.fn() };
-        execute({ writer });
-        return 'ui-stream';
-      },
-    );
+    createUIMessageStreamMock.mockImplementation((args: CreateUiStreamArgs) => {
+      capturedOnEnd = args.onEnd;
+      lastWriter = { write: vi.fn(), merge: vi.fn() };
+      args.execute({ writer: lastWriter });
+      return 'ui-stream';
+    });
 
     streamTextMock.mockReturnValue({ stream: 'text-stream' });
     toUIMessageStreamMock.mockReturnValue('ui-message-stream');
@@ -142,12 +150,23 @@ describe('ChatStreamService', () => {
                 CHAT_CONTEXT_IMAGE_TURNS: '3',
                 CHAT_IMAGE_DETAIL: 'low',
                 CHAT_SYSTEM_PROMPT: '',
-                DEEPSEEK_BASE_URL: 'https://api.deepseek.com/v1',
-                DEEPSEEK_MODEL: 'deepseek-flash',
+                LLM_PROVIDER: 'deepseek',
+                LLM_BASE_URL: 'https://api.deepseek.com/v1',
+                LLM_MODEL: 'deepseek-flash',
               };
               return map[key] ?? fb;
             }),
-            getOrThrow: vi.fn(() => 'test-deepseek-key'),
+            getOrThrow: vi.fn((key: string) => {
+              const map: Record<string, string> = {
+                LLM_API_KEY: 'test-llm-key',
+                LLM_BASE_URL: 'https://api.deepseek.com/v1',
+                LLM_MODEL: 'deepseek-flash',
+              };
+              if (!(key in map)) {
+                throw new Error(`missing config ${key}`);
+              }
+              return map[key];
+            }),
           },
         },
         {
@@ -166,6 +185,44 @@ describe('ChatStreamService', () => {
       on: vi.fn(),
       off: vi.fn(),
     } as unknown as Response;
+  }
+
+  async function runHappyStream(
+    overrides: {
+      messages?: Array<{
+        id?: string;
+        role: string;
+        content: string;
+        parts: unknown;
+        reasoningContent?: string | null;
+        createdAt: Date;
+      }>;
+      thinking?: boolean;
+      reasoningEffort?: 'low' | 'high' | 'max';
+    } = {},
+  ): Promise<void> {
+    prisma.message.findMany.mockResolvedValue(
+      overrides.messages ?? [
+        {
+          id: 'msg-user',
+          role: 'user',
+          content: 'hi',
+          parts: [{ type: 'text', text: 'hi' }],
+          createdAt: new Date(),
+        },
+      ],
+    );
+
+    await service.stream(
+      userId,
+      conversationId,
+      {
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+        thinking: overrides.thinking ?? true,
+        reasoningEffort: overrides.reasoningEffort ?? 'high',
+      },
+      mockRes(),
+    );
   }
 
   it('throws 404 when conversation missing', async () => {
@@ -203,28 +260,14 @@ describe('ChatStreamService', () => {
   });
 
   it('streams with mocked AI SDK helpers', async () => {
-    // After user message persist, context load should include it
-    prisma.message.findMany.mockResolvedValue([
-      {
-        id: 'msg-user',
-        role: 'user',
-        content: 'hi',
-        parts: [{ type: 'text', text: 'hi' }],
-        createdAt: new Date(),
-      },
-    ]);
+    await runHappyStream();
 
-    await service.stream(
-      userId,
-      conversationId,
-      {
-        messages: [{ role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
-        thinking: true,
-        reasoningEffort: 'high',
-      },
-      mockRes(),
-    );
-
+    expect(createLanguageModelMock).toHaveBeenCalledWith({
+      provider: 'deepseek',
+      apiKey: 'test-llm-key',
+      baseURL: 'https://api.deepseek.com/v1',
+      modelId: 'deepseek-flash',
+    });
     expect(streamTextMock).toHaveBeenCalled();
     expect(pipeMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -232,5 +275,112 @@ describe('ChatStreamService', () => {
       }),
     );
     expect(redis.decr).toHaveBeenCalled();
+  });
+
+  it('writes data-chatMeta before merging UI stream', async () => {
+    const writeOrder: string[] = [];
+    createUIMessageStreamMock.mockImplementation((args: CreateUiStreamArgs) => {
+      capturedOnEnd = args.onEnd;
+      const writer: UiStreamWriter = {
+        write: vi.fn((chunk: { type: string }) => {
+          writeOrder.push(chunk.type);
+        }),
+        merge: vi.fn(() => {
+          writeOrder.push('merge');
+        }),
+      };
+      lastWriter = writer;
+      args.execute({ writer });
+      return 'ui-stream';
+    });
+
+    await runHappyStream();
+
+    expect(writeOrder[0]).toBe('data-chatMeta');
+    expect(writeOrder.indexOf('data-chatMeta')).toBeLessThan(
+      writeOrder.indexOf('merge'),
+    );
+    expect(lastWriter.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'data-chatMeta',
+        data: expect.objectContaining({
+          userMessageId: expect.any(String),
+          assistantMessageId: expect.any(String),
+          quota: null,
+        }),
+      }),
+    );
+  });
+
+  it('persists once on onEnd abort with finishReason=aborted', async () => {
+    await runHappyStream();
+
+    expect(capturedOnEnd).toEqual(expect.any(Function));
+
+    await capturedOnEnd?.({
+      isAborted: true,
+      responseMessage: { parts: [{ type: 'text', text: '半截' }] },
+    });
+
+    expect(billing.recordSpend).toHaveBeenCalledTimes(1);
+    expect(billing.incrementWeeklySpend).toHaveBeenCalledTimes(1);
+
+    const assistantCreates = txMessageCreate.mock.calls.filter(
+      (call) => call[0]?.data?.role === MessageRole.assistant,
+    );
+    expect(assistantCreates).toHaveLength(1);
+    expect(assistantCreates[0]?.[0]).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          role: MessageRole.assistant,
+          content: '半截',
+          finishReason: 'aborted',
+        }),
+      }),
+    );
+
+    await capturedOnEnd?.({
+      isAborted: true,
+      responseMessage: { parts: [{ type: 'text', text: '半截' }] },
+    });
+
+    expect(billing.recordSpend).toHaveBeenCalledTimes(1);
+    expect(billing.incrementWeeklySpend).toHaveBeenCalledTimes(1);
+    expect(
+      txMessageCreate.mock.calls.filter(
+        (call) => call[0]?.data?.role === MessageRole.assistant,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('buildModelMessages does not put historical reasoning into model messages', async () => {
+    const secretCot = 'SECRET_COT_SHOULD_NOT_APPEAR';
+    await runHappyStream({
+      messages: [
+        {
+          id: 'msg-asst',
+          role: 'assistant',
+          content: '可见回复',
+          parts: [{ type: 'text', text: '可见回复' }],
+          reasoningContent: secretCot,
+          createdAt: new Date('2020-01-01T00:00:00.000Z'),
+        },
+        {
+          id: 'msg-user',
+          role: 'user',
+          content: 'hi',
+          parts: [{ type: 'text', text: 'hi' }],
+          createdAt: new Date('2020-01-02T00:00:00.000Z'),
+        },
+      ],
+    });
+
+    expect(streamTextMock).toHaveBeenCalled();
+    const { messages } = streamTextMock.mock.calls[0]?.[0] as {
+      messages: Array<{ role: string; content: unknown }>;
+    };
+    const assistant = messages.find((m) => m.role === 'assistant');
+    expect(assistant?.content).toBe('可见回复');
+    expect(JSON.stringify(messages)).not.toContain(secretCot);
   });
 });
