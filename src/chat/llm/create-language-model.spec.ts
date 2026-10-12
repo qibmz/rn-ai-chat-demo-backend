@@ -12,6 +12,22 @@ describe('createLanguageModel', () => {
     expect(typeof (model as { doStream?: unknown }).doStream).toBe('function');
   });
 
+  it.each(['', '   '])(
+    'defaults empty/whitespace provider to deepseek (provider=%j)',
+    (provider) => {
+      const model = createLanguageModel({
+        provider,
+        apiKey: 'test-key',
+        baseURL: 'https://api.deepseek.com/v1',
+        modelId: 'deepseek-flash',
+      });
+      expect(model).toBeTruthy();
+      expect(typeof (model as { doStream?: unknown }).doStream).toBe(
+        'function',
+      );
+    },
+  );
+
   it('throws Chinese error for unsupported provider', () => {
     expect(() =>
       createLanguageModel({
