@@ -9,6 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import * as Sentry from '@sentry/nestjs';
 import { Request, Response } from 'express';
+import { MulterError } from 'multer';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { ApiErrorResponse } from '../interfaces/api-response.interface.js';
@@ -61,9 +62,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (response.headersSent) {
       if (!response.writableEnded) {
         try {
-          // Best-effort notice; AI SDK clients may ignore unknown frames mid-stream
+          // UI Message Stream schema: { type: 'error', errorText }
           response.write(
-            `event: error\ndata: ${JSON.stringify({ message })}\n\n`,
+            `data: ${JSON.stringify({ type: 'error', errorText: message })}\n\n`,
           );
         } catch {
           // ignore write failures on a half-closed socket
@@ -89,6 +90,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
     message: string;
     errors: string[] | null;
   } {
+    if (exception instanceof MulterError) {
+      if (exception.code === 'LIMIT_FILE_SIZE') {
+        return {
+          statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
+          message: '图片大小超出限制',
+          errors: null,
+        };
+      }
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: '上传文件无效',
+        errors: null,
+      };
+    }
+
     if (exception instanceof HttpException) {
       const statusCode = exception.getStatus();
       const res = exception.getResponse();
