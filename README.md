@@ -57,30 +57,29 @@ Seed 默认账号：`admin@example.com` / `password123`（可用 `SEED_EMAIL` / 
 
 复制 `.env.example` 后按需填写。常用变量：
 
-| 变量                                       | 说明                                                                       |
-| ------------------------------------------ | -------------------------------------------------------------------------- |
-| `DATABASE_URL`                             | PostgreSQL 连接串                                                          |
-| `REDIS_URL` / `REDIS_HOST` + `REDIS_PORT`  | Redis                                                                      |
-| `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` | JWT 密钥（本地务必改掉）                                                   |
-| `SEED_EMAIL` / `SEED_PASSWORD`             | `prisma:seed` 演示用户                                                     |
-| `SENTRY_DSN`                               | 可选；空则禁用 Sentry                                                      |
-| `SENTRY_TRACES_SAMPLE_RATE`                | 默认 `0.1`                                                                 |
-| `RESEND_API_KEY`                           | 可选；空则邮件 job 只打日志                                                |
-| `APP_NAME`                                 | 产品展示名（邮件 / Swagger / 日志），默认见 `.env.example`                 |
-| `APP_URL`                                  | 邮件确认链接前缀，默认 `http://localhost:3000`                             |
-| `EMAIL_VERIFY_EXPIRES_IN`                  | 确认 token 有效期，默认 `24h`                                              |
-| `EMAIL_VERIFY_COOLDOWN`                    | 重发确认邮件冷却，默认 `60s`                                               |
-| `EMAIL_VERIFICATION_REQUIRED`              | `true` 时未验证邮箱禁止登录（403），默认 `false`                           |
-| `PASSWORD_RESET_EXPIRES_IN`                | 忘记密码验证码有效期，默认 `15m`（8 位数字码）                             |
-| `PASSWORD_RESET_COOLDOWN`                  | 忘记密码发送冷却，默认 `60s`                                               |
-| `CORS_ORIGINS`                             | 生产允许源（逗号分隔）；开发环境忽略并放行任意 Origin；生产未配则同源 only |
-| `THROTTLE_TTL_MS` / `THROTTLE_LIMIT`       | 全局 HTTP 限流（Redis 共享，默认 60s / 100）                               |
-| `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL`   | DeepSeek 对话（必填 key；占位会被拒绝）                                    |
-| `DEEPSEEK_MODEL`                           | 默认 `deepseek-flash`                                                      |
-| `CHAT_ATTACHMENT_STORAGE`                  | `r2`（默认）或 `disabled`（纯文本 / CI，不上传附件）                       |
-| `CHAT_USER_WEEKLY_BUDGET_CNY`              | 每用户周预算（软限制，对外只返回百分比）                                   |
-| `CHAT_MAX_CONCURRENT_STREAMS`              | 同一用户并发流式请求上限                                                   |
-| `MAIL_FROM`                                | 发件人；为空时回退为 `APP_NAME <onboarding@resend.dev>`                    |
+| 变量                                                          | 说明                                                                                                               |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`                                                | PostgreSQL 连接串                                                                                                  |
+| `REDIS_URL` / `REDIS_HOST` + `REDIS_PORT`                     | Redis                                                                                                              |
+| `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET`                    | JWT 密钥（本地务必改掉）                                                                                           |
+| `SEED_EMAIL` / `SEED_PASSWORD`                                | `prisma:seed` 演示用户                                                                                             |
+| `SENTRY_DSN`                                                  | 可选；空则禁用 Sentry                                                                                              |
+| `SENTRY_TRACES_SAMPLE_RATE`                                   | 默认 `0.1`                                                                                                         |
+| `RESEND_API_KEY`                                              | 可选；空则邮件 job 只打日志                                                                                        |
+| `APP_NAME`                                                    | 产品展示名（邮件 / Swagger / 日志），默认见 `.env.example`                                                         |
+| `APP_URL`                                                     | 邮件确认链接前缀，默认 `http://localhost:3000`                                                                     |
+| `EMAIL_VERIFY_EXPIRES_IN`                                     | 确认 token 有效期，默认 `24h`                                                                                      |
+| `EMAIL_VERIFY_COOLDOWN`                                       | 重发确认邮件冷却，默认 `60s`                                                                                       |
+| `EMAIL_VERIFICATION_REQUIRED`                                 | `true` 时未验证邮箱禁止登录（403），默认 `false`                                                                   |
+| `PASSWORD_RESET_EXPIRES_IN`                                   | 忘记密码验证码有效期，默认 `15m`（8 位数字码）                                                                     |
+| `PASSWORD_RESET_COOLDOWN`                                     | 忘记密码发送冷却，默认 `60s`                                                                                       |
+| `CORS_ORIGINS`                                                | 生产允许源（逗号分隔）；开发环境忽略并放行任意 Origin；生产未配则同源 only                                         |
+| `THROTTLE_TTL_MS` / `THROTTLE_LIMIT`                          | 全局 HTTP 限流（Redis 共享，默认 60s / 100）                                                                       |
+| `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | LLM（本迭代仅 `deepseek`；必填 key；占位会被拒绝）。本地若仍有 `DEEPSEEK_*` 需**手动**改为 `LLM_*`（无运行时别名） |
+| `CHAT_ATTACHMENT_STORAGE`                                     | `r2`（默认）或 `disabled`（纯文本 / CI，不上传附件）                                                               |
+| `CHAT_USER_WEEKLY_BUDGET_CNY`                                 | 每用户周预算（软限制，对外只返回百分比）                                                                           |
+| `CHAT_MAX_CONCURRENT_STREAMS`                                 | 同一用户并发流式请求上限                                                                                           |
+| `MAIL_FROM`                                                   | 发件人；为空时回退为 `APP_NAME <onboarding@resend.dev>`                                                            |
 
 ### Sentry Cloud（可选）
 
@@ -132,9 +131,9 @@ Seed 默认账号：`admin@example.com` / `password123`（可用 `SEED_EMAIL` / 
 - 邮箱入库/查询统一 `trim().toLowerCase()`。
 - `resend-verification` 不暴露是否已验证；刷新令牌重用会吊销该用户全部会话。
 
-## Chat（DeepSeek + AI SDK UI Stream）
+## Chat（`@ai-sdk/deepseek` + UI Message Stream）
 
-所有聊天接口需 **Bearer JWT**。流式接口返回 AI SDK **UI Message Stream**（`Content-Type: text/event-stream`），与 `@ai-sdk/react` 的 `useChat` + `DefaultChatTransport` 对齐。
+所有聊天接口需 **Bearer JWT**。服务端用 `@ai-sdk/deepseek` + `streamText` 生成回复，经 `createUIMessageStream` / `pipeUIMessageStreamToResponse` 写出 AI SDK **UI Message Stream**（`Content-Type: text/event-stream`）；落盘在 `createUIMessageStream.onEnd`。与 `@ai-sdk/react` 的 `useChat` + `DefaultChatTransport` 对齐。
 
 | Method | Path                                      | 说明                         | 限流（约） |
 | ------ | ----------------------------------------- | ---------------------------- | ---------- |

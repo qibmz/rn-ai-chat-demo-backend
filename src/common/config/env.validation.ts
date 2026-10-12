@@ -14,6 +14,9 @@ const PLACEHOLDER_API_KEYS = new Set([
   're_xxx',
 ]);
 
+/** 本迭代仅 deepseek；后续扩展时加白名单，不做运行时别名。 */
+const LLM_PROVIDERS = ['deepseek'] as const;
+
 function requireString(
   env: Record<string, unknown>,
   key: string,
@@ -111,7 +114,7 @@ export function validateEnv(env: Record<string, unknown>) {
   requireString(env, 'DATABASE_URL', 8);
   requireJwtSecret(env, 'JWT_ACCESS_SECRET');
   requireJwtSecret(env, 'JWT_REFRESH_SECRET');
-  requireApiKey(env, 'DEEPSEEK_API_KEY');
+  requireApiKey(env, 'LLM_API_KEY');
 
   optionalDuration(env, 'JWT_ACCESS_EXPIRES_IN');
   optionalDuration(env, 'JWT_REFRESH_EXPIRES_IN');
@@ -140,6 +143,7 @@ export function validateEnv(env: Record<string, unknown>) {
   optionalNonNegativeInt(env, 'CHAT_PRICE_INPUT_HIT_MICROS_PER_MTOKENS');
   optionalNonNegativeInt(env, 'CHAT_PRICE_OUTPUT_MICROS_PER_MTOKENS');
 
+  optionalEnum(env, 'LLM_PROVIDER', LLM_PROVIDERS);
   optionalEnum(env, 'CHAT_ATTACHMENT_STORAGE', ['r2', 'disabled'] as const);
   optionalEnum(env, 'CHAT_IMAGE_DETAIL', [
     'low',

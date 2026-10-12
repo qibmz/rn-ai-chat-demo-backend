@@ -6,7 +6,7 @@ const base = {
   REDIS_URL: 'redis://localhost:6379',
   JWT_ACCESS_SECRET: 'local-dev-access-secret-not-in-example!!',
   JWT_REFRESH_SECRET: 'local-dev-refresh-secret-not-in-example!',
-  DEEPSEEK_API_KEY: 'test-deepseek-key-not-placeholder',
+  LLM_API_KEY: 'test-llm-key-not-placeholder',
   CHAT_ATTACHMENT_STORAGE: 'disabled',
 };
 
@@ -37,19 +37,36 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ ...base, PORT: 'abc' })).toThrow(/PORT/);
   });
 
-  it('rejects placeholder DEEPSEEK_API_KEY', () => {
-    expect(() =>
-      validateEnv({ ...base, DEEPSEEK_API_KEY: 'change-me' }),
-    ).toThrow(/DEEPSEEK_API_KEY/);
+  it('rejects placeholder LLM_API_KEY', () => {
+    expect(() => validateEnv({ ...base, LLM_API_KEY: 'change-me' })).toThrow(
+      /LLM_API_KEY/,
+    );
   });
 
-  it('allows test- prefixed DEEPSEEK_API_KEY for e2e', () => {
+  it('allows test- prefixed LLM_API_KEY for e2e', () => {
     expect(() =>
       validateEnv({
         ...base,
-        DEEPSEEK_API_KEY: 'test-deepseek-key-not-placeholder',
+        LLM_API_KEY: 'test-llm-key-not-placeholder',
       }),
     ).not.toThrow();
+  });
+
+  it('accepts LLM_PROVIDER=deepseek', () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        LLM_PROVIDER: 'deepseek',
+        LLM_BASE_URL: 'https://api.deepseek.com/v1',
+        LLM_MODEL: 'deepseek-flash',
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects unknown LLM_PROVIDER', () => {
+    expect(() => validateEnv({ ...base, LLM_PROVIDER: 'qwen' })).toThrow(
+      /LLM_PROVIDER/,
+    );
   });
 
   it('requires R2_* when CHAT_ATTACHMENT_STORAGE=r2', () => {

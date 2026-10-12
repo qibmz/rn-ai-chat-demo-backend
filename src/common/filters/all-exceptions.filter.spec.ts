@@ -76,7 +76,11 @@ describe('AllExceptionsFilter', () => {
 
     expect(json).not.toHaveBeenCalled();
     expect(status).not.toHaveBeenCalled();
-    expect(write).toHaveBeenCalledWith(expect.stringContaining('event: error'));
+    expect(write).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'data: {"type":"error","errorText":"服务器内部错误"}',
+      ),
+    );
     expect(end).toHaveBeenCalled();
   });
 });
