@@ -37,10 +37,10 @@ NestJS 12：Prisma + PostgreSQL、Redis、BullMQ、JWT、Winston、Swagger、Git
 ```bash
 cp .env.example .env
 docker compose up -d          # Postgres + Redis
-npm install
-npx prisma migrate deploy
-npm run prisma:seed
-npm run start:dev
+pnpm install
+pnpm exec prisma migrate deploy
+pnpm run prisma:seed
+pnpm run start:dev
 ```
 
 |         | URL                            |
