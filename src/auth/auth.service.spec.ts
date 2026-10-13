@@ -10,6 +10,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
 import { createHmac } from 'crypto';
 import { Mock } from 'vitest';
+import { BotsService } from '../chat/bots.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { EmailQueue } from '../queues/email/email.queue.js';
 import { RedisService } from '../redis/redis.service.js';
 import { UsersService } from '../users/users.service.js';
@@ -43,6 +45,12 @@ describe('AuthService', () => {
     signAsync: Mock;
     verifyAsync: Mock;
   };
+  let prismaService: {
+    $transaction: Mock;
+  };
+  let botsService: {
+    createMainBotWithConversation: Mock;
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -56,6 +64,34 @@ describe('AuthService', () => {
             findById: vi.fn(),
             markEmailVerified: vi.fn(),
             updatePassword: vi.fn(),
+          },
+        },
+        {
+          provide: BotsService,
+          useValue: {
+            createMainBotWithConversation: vi.fn().mockResolvedValue({
+              botId: 'aaaaaaaa-aaaa-4111-8111-aaaaaaaaaaaa',
+              conversationId: 'bbbbbbbb-bbbb-4222-8222-bbbbbbbbbbbb',
+            }),
+          },
+        },
+        {
+          provide: PrismaService,
+          useValue: {
+            $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+              fn({
+                user: {
+                  create: vi.fn().mockResolvedValue({
+                    id: '11111111-1111-1111-1111-111111111111',
+                    email: 'user@example.com',
+                    passwordHash: 'hash',
+                    emailVerifiedAt: null,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                  }),
+                },
+              }),
+            ),
           },
         },
         {
@@ -120,18 +156,12 @@ describe('AuthService', () => {
     redisService = module.get(RedisService);
     emailQueue = module.get(EmailQueue);
     jwtService = module.get(JwtService);
+    prismaService = module.get(PrismaService);
+    botsService = module.get(BotsService);
   });
 
   it('registers a new user and enqueues verification email', async () => {
     usersService.findByEmail.mockResolvedValue(null);
-    usersService.create.mockResolvedValue({
-      id: '11111111-1111-1111-1111-111111111111',
-      email: 'user@example.com',
-      passwordHash: 'hash',
-      emailVerifiedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
     redisService.get.mockResolvedValue(null);
 
     const result = await service.register({
@@ -139,9 +169,11 @@ describe('AuthService', () => {
       password: 'password123',
     });
 
-    expect(usersService.create).toHaveBeenCalledWith(
-      'user@example.com',
-      expect.any(String),
+    expect(prismaService.$transaction).toHaveBeenCalled();
+    expect(botsService.createMainBotWithConversation).toHaveBeenCalledWith(
+      expect.anything(),
+      '11111111-1111-1111-1111-111111111111',
+      'Test App',
     );
     expect(result.accessToken).toBe('token');
     expect(result.refreshToken).toBe('token');

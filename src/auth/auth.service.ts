@@ -15,7 +15,9 @@ import {
   randomUUID,
   timingSafeEqual,
 } from 'crypto';
+import { BotsService } from '../chat/bots.service.js';
 import { normalizeEmail } from '../common/utils/normalize-email.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { EmailQueue } from '../queues/email/email.queue.js';
 import { RedisService } from '../redis/redis.service.js';
 import { UsersService } from '../users/users.service.js';
@@ -52,6 +54,8 @@ export class AuthService {
 
   constructor(
     private readonly usersService: UsersService,
+    private readonly prisma: PrismaService,
+    private readonly botsService: BotsService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
@@ -70,7 +74,20 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
-    const user = await this.usersService.create(email, passwordHash);
+    const appName =
+      this.configService.get<string>('APP_NAME', '牛马')?.trim() || '牛马';
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: { email, passwordHash },
+      });
+      await this.botsService.createMainBotWithConversation(
+        tx,
+        created.id,
+        appName,
+      );
+      return created;
+    });
 
     try {
       await this.sendVerificationEmail(user.id, user.email);
