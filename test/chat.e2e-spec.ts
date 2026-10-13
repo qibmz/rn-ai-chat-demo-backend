@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 
@@ -63,16 +64,16 @@ describe('Chat API (e2e)', () => {
     expect((res.body as ApiBody).code).toBe(401);
   });
 
-  it('登录后可查询额度并创建会话', async () => {
-    const email = process.env.SEED_EMAIL ?? 'admin@example.com';
-    const password = process.env.SEED_PASSWORD ?? 'password123';
+  it('注册后可查询额度并创建会话', async () => {
+    const email = `chat-e2e-${randomUUID()}@example.com`;
+    const password = 'password123';
 
-    const login = await request(app.getHttpServer())
-      .post('/auth/login')
+    const register = await request(app.getHttpServer())
+      .post('/auth/register')
       .send({ email, password })
-      .expect(200);
+      .expect(201);
     const accessToken = (
-      login.body as ApiBody & { data: { accessToken: string } }
+      register.body as ApiBody & { data: { accessToken: string } }
     ).data.accessToken;
 
     const quota = await request(app.getHttpServer())
