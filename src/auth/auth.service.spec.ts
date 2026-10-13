@@ -150,6 +150,7 @@ describe('AuthService', () => {
       expect.objectContaining({
         to: 'user@example.com',
         subject: expect.stringContaining('验证'),
+        html: expect.stringContaining('验证邮箱'),
       }),
     );
     expect(redisService.set).toHaveBeenCalled();
@@ -242,6 +243,7 @@ describe('AuthService', () => {
       expect.objectContaining({
         to: 'user@example.com',
         subject: expect.stringContaining('密码重置'),
+        html: expect.stringContaining('重置密码验证码'),
       }),
     );
     expect(redisService.set).toHaveBeenCalled();
