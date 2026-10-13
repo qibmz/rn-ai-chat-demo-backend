@@ -25,7 +25,7 @@ import {
 import { ChatConversationsService } from './chat-conversations.service.js';
 import { ChatMessagesService } from './chat-messages.service.js';
 import { ChatStreamService } from './chat-stream.service.js';
-import { CreateConversationDto } from './dto/create-conversation.dto.js';
+import { ListConversationsQueryDto } from './dto/list-conversations-query.dto.js';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto.js';
 import { StreamMessagesDto } from './dto/stream-messages.dto.js';
 import { UpdateConversationDto } from './dto/update-conversation.dto.js';
@@ -41,17 +41,13 @@ export class ChatConversationsController {
     private readonly streamService: ChatStreamService,
   ) {}
 
-  @Post()
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
-  @ApiOperation({ summary: '创建会话' })
-  create(@CurrentUser() user: AuthUser, @Body() dto: CreateConversationDto) {
-    return this.conversationsService.create(user.userId, dto);
-  }
-
   @Get()
   @ApiOperation({ summary: '会话列表' })
-  list(@CurrentUser() user: AuthUser) {
-    return this.conversationsService.list(user.userId);
+  list(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListConversationsQueryDto,
+  ) {
+    return this.conversationsService.list(user.userId, query.botId);
   }
 
   @Get(':id')

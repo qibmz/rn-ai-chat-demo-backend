@@ -1,10 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { CreateConversationDto } from './dto/create-conversation.dto.js';
 import { UpdateConversationDto } from './dto/update-conversation.dto.js';
 
 export type ConversationDto = {
   id: string;
+  botId: string;
   title: string;
   createdAt: string;
   updatedAt: string;
@@ -16,34 +16,27 @@ export class ChatConversationsService {
 
   private toDto(row: {
     id: string;
+    botId: string;
     title: string;
     createdAt: Date;
     updatedAt: Date;
   }): ConversationDto {
     return {
       id: row.id,
+      botId: row.botId,
       title: row.title,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };
   }
 
-  async create(
-    userId: string,
-    dto: CreateConversationDto,
-  ): Promise<ConversationDto> {
-    const row = await this.prisma.conversation.create({
-      data: {
-        userId,
-        title: dto.title?.trim() || '新对话',
-      },
-    });
-    return this.toDto(row);
-  }
-
-  async list(userId: string): Promise<ConversationDto[]> {
+  async list(userId: string, botId?: string): Promise<ConversationDto[]> {
     const rows = await this.prisma.conversation.findMany({
-      where: { userId, deletedAt: null },
+      where: {
+        userId,
+        deletedAt: null,
+        ...(botId ? { botId } : {}),
+      },
       orderBy: { updatedAt: 'desc' },
     });
     return rows.map((r) => this.toDto(r));
