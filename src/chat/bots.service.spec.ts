@@ -155,6 +155,12 @@ describe('BotsService', () => {
         data: expect.objectContaining({ deletedAt: expect.any(Date) }),
       }),
     );
+    expect(prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: botId },
+        data: expect.objectContaining({ deletedAt: expect.any(Date) }),
+      }),
+    );
   });
 
   it('rejects soft-delete of main bot', async () => {
@@ -174,11 +180,11 @@ describe('BotsService', () => {
 
     await expect(
       service.update(userId, botId, { deleted: true }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toThrow(new BadRequestException('主 Bot 不可删除'));
   });
 
   it('ensureMainBot is idempotent on P2002', async () => {
-    prisma.bot.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({
+    const existingMain = {
       id: botId,
       userId,
       kind: BotKind.main,
@@ -190,7 +196,11 @@ describe('BotsService', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       conversation: { id: conversationId },
-    });
+    };
+    prisma.bot.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existingMain);
     prisma.bot.create.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError('unique', {
         code: 'P2002',
@@ -199,7 +209,9 @@ describe('BotsService', () => {
     );
 
     const main = await service.ensureMainBot(userId);
+    expect(prisma.bot.create).toHaveBeenCalled();
     expect(main.id).toBe(botId);
+    expect(main.conversation?.id).toBe(conversationId);
   });
 
   it('list attaches lastMessagePreview from one raw query', async () => {
@@ -238,6 +250,152 @@ describe('BotsService', () => {
       lastMessagePreview: '你好世界',
       conversationId,
     });
+  });
+
+  it('list preview uses [图片] when content empty and parts have image', async () => {
+    const subId = 'cccccccc-cccc-4111-8111-cccccccccccc';
+    const subConvId = 'dddddddd-dddd-4111-8111-dddddddddddd';
+    prisma.bot.findFirst.mockResolvedValue({
+      id: botId,
+      kind: BotKind.main,
+      conversation: { id: conversationId },
+    });
+    prisma.bot.findMany.mockResolvedValue([
+      {
+        id: botId,
+        userId,
+        name: '牛马',
+        kind: BotKind.main,
+        faceColor: '#0A0A0A',
+        faceShape: BotFaceShape.circle,
+        systemPrompt: null,
+        deletedAt: null,
+        createdAt: new Date('2026-10-13T00:00:00.000Z'),
+        updatedAt: new Date('2026-10-13T00:00:00.000Z'),
+        conversation: { id: conversationId },
+      },
+      {
+        id: subId,
+        userId,
+        name: '子',
+        kind: BotKind.sub,
+        faceColor: '#DB2777',
+        faceShape: BotFaceShape.circle,
+        systemPrompt: null,
+        deletedAt: null,
+        createdAt: new Date('2026-10-13T00:00:00.000Z'),
+        updatedAt: new Date('2026-10-13T00:00:00.000Z'),
+        conversation: { id: subConvId },
+      },
+    ]);
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        conversation_id: subConvId,
+        content: '   ',
+        parts: [{ type: 'image', url: 'https://example.com/x.png' }],
+        created_at: new Date('2026-10-13T02:00:00.000Z'),
+      },
+    ]);
+
+    const list = await service.list(userId);
+    const sub = list.find((b) => b.id === subId);
+    expect(sub).toMatchObject({
+      lastMessagePreview: '[图片]',
+      lastMessageAt: '2026-10-13T02:00:00.000Z',
+    });
+  });
+
+  it('list preview truncates long text to 80 characters', async () => {
+    const longText = 'a'.repeat(100);
+    prisma.bot.findFirst.mockResolvedValue({
+      id: botId,
+      kind: BotKind.main,
+      conversation: { id: conversationId },
+    });
+    prisma.bot.findMany.mockResolvedValue([
+      {
+        id: botId,
+        userId,
+        name: '牛马',
+        kind: BotKind.main,
+        faceColor: '#0A0A0A',
+        faceShape: BotFaceShape.circle,
+        systemPrompt: null,
+        deletedAt: null,
+        createdAt: new Date('2026-10-13T00:00:00.000Z'),
+        updatedAt: new Date('2026-10-13T00:00:00.000Z'),
+        conversation: { id: conversationId },
+      },
+    ]);
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        conversation_id: conversationId,
+        content: longText,
+        parts: [],
+        created_at: new Date('2026-10-13T01:00:00.000Z'),
+      },
+    ]);
+
+    const list = await service.list(userId);
+    expect(list[0].lastMessagePreview).toBe('a'.repeat(80));
+    expect(list[0].lastMessageAt).toBe('2026-10-13T01:00:00.000Z');
+  });
+
+  it('list orders main first then subs by updatedAt desc', async () => {
+    const subOldId = 'cccccccc-cccc-4111-8111-cccccccccccc';
+    const subNewId = 'dddddddd-dddd-4111-8111-dddddddddddd';
+    const subOldConv = 'eeeeeeee-eeee-4111-8111-eeeeeeeeeeee';
+    const subNewConv = 'ffffffff-ffff-4111-8111-ffffffffffff';
+    prisma.bot.findFirst.mockResolvedValue({
+      id: botId,
+      kind: BotKind.main,
+      conversation: { id: conversationId },
+    });
+    prisma.bot.findMany.mockResolvedValue([
+      {
+        id: subNewId,
+        userId,
+        name: '新子',
+        kind: BotKind.sub,
+        faceColor: '#DB2777',
+        faceShape: BotFaceShape.circle,
+        systemPrompt: null,
+        deletedAt: null,
+        createdAt: new Date('2026-10-10T00:00:00.000Z'),
+        updatedAt: new Date('2026-10-13T12:00:00.000Z'),
+        conversation: { id: subNewConv },
+      },
+      {
+        id: botId,
+        userId,
+        name: '牛马',
+        kind: BotKind.main,
+        faceColor: '#0A0A0A',
+        faceShape: BotFaceShape.circle,
+        systemPrompt: null,
+        deletedAt: null,
+        createdAt: new Date('2026-10-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-10-01T00:00:00.000Z'),
+        conversation: { id: conversationId },
+      },
+      {
+        id: subOldId,
+        userId,
+        name: '旧子',
+        kind: BotKind.sub,
+        faceColor: '#DB2777',
+        faceShape: BotFaceShape.circle,
+        systemPrompt: null,
+        deletedAt: null,
+        createdAt: new Date('2026-10-10T00:00:00.000Z'),
+        updatedAt: new Date('2026-10-12T00:00:00.000Z'),
+        conversation: { id: subOldConv },
+      },
+    ]);
+    prisma.$queryRaw.mockResolvedValue([]);
+
+    const list = await service.list(userId);
+    expect(list.map((b) => b.id)).toEqual([botId, subNewId, subOldId]);
   });
 
   it('getById throws 404 when missing', async () => {
