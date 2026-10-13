@@ -69,6 +69,7 @@ describe('ChatStreamService', () => {
   let txMessageCreate: ReturnType<typeof vi.fn>;
   let capturedOnEnd: CreateUiStreamArgs['onEnd'];
   let lastWriter: UiStreamWriter;
+  let configMap: Record<string, string>;
 
   const conversationId = 'bbbbbbbb-bbbb-4222-8222-bbbbbbbbbbbb';
   const userId = '11111111-1111-4111-8111-111111111111';
@@ -78,10 +79,31 @@ describe('ChatStreamService', () => {
     capturedOnEnd = undefined;
     lastWriter = { write: vi.fn(), merge: vi.fn() };
     txMessageCreate = vi.fn().mockResolvedValue({});
+    configMap = {
+      CHAT_MAX_CONCURRENT_STREAMS: '2',
+      CHAT_STREAM_LOCK_TTL_SEC: '1800',
+      CHAT_MAX_USER_CHARS: '8000',
+      CHAT_MAX_IMAGES_PER_MESSAGE: '3',
+      CHAT_MAX_TOTAL_IMAGE_BYTES: '16777216',
+      CHAT_THINKING_DEFAULT: 'true',
+      CHAT_REASONING_EFFORT_DEFAULT: 'high',
+      CHAT_MAX_TOKENS: '4096',
+      CHAT_CONTEXT_MAX_TURNS: '20',
+      CHAT_CONTEXT_MAX_CHARS: '32000',
+      CHAT_CONTEXT_IMAGE_TURNS: '3',
+      CHAT_IMAGE_DETAIL: 'low',
+      CHAT_SYSTEM_PROMPT: '全局默认',
+      LLM_PROVIDER: 'deepseek',
+      LLM_BASE_URL: 'https://api.deepseek.com/v1',
+      LLM_MODEL: 'deepseek-flash',
+    };
 
     prisma = {
       conversation: {
-        findFirst: vi.fn().mockResolvedValue({ id: conversationId }),
+        findFirst: vi.fn().mockResolvedValue({
+          id: conversationId,
+          bot: { systemPrompt: null, deletedAt: null },
+        }),
       },
       message: {
         findMany: vi.fn().mockResolvedValue([]),
@@ -135,27 +157,7 @@ describe('ChatStreamService', () => {
         {
           provide: ConfigService,
           useValue: {
-            get: vi.fn((key: string, fb?: string) => {
-              const map: Record<string, string> = {
-                CHAT_MAX_CONCURRENT_STREAMS: '2',
-                CHAT_STREAM_LOCK_TTL_SEC: '1800',
-                CHAT_MAX_USER_CHARS: '8000',
-                CHAT_MAX_IMAGES_PER_MESSAGE: '3',
-                CHAT_MAX_TOTAL_IMAGE_BYTES: '16777216',
-                CHAT_THINKING_DEFAULT: 'true',
-                CHAT_REASONING_EFFORT_DEFAULT: 'high',
-                CHAT_MAX_TOKENS: '4096',
-                CHAT_CONTEXT_MAX_TURNS: '20',
-                CHAT_CONTEXT_MAX_CHARS: '32000',
-                CHAT_CONTEXT_IMAGE_TURNS: '3',
-                CHAT_IMAGE_DETAIL: 'low',
-                CHAT_SYSTEM_PROMPT: '',
-                LLM_PROVIDER: 'deepseek',
-                LLM_BASE_URL: 'https://api.deepseek.com/v1',
-                LLM_MODEL: 'deepseek-flash',
-              };
-              return map[key] ?? fb;
-            }),
+            get: vi.fn((key: string, fb?: string) => configMap[key] ?? fb),
             getOrThrow: vi.fn((key: string) => {
               const map: Record<string, string> = {
                 LLM_API_KEY: 'test-llm-key',
@@ -238,6 +240,100 @@ describe('ChatStreamService', () => {
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(redis.incr).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 when conversation bot is soft-deleted', async () => {
+    prisma.conversation.findFirst.mockResolvedValue({
+      id: conversationId,
+      bot: { systemPrompt: '你是日程助手', deletedAt: new Date() },
+    });
+    await expect(
+      service.stream(
+        userId,
+        conversationId,
+        {
+          messages: [{ role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+        },
+        mockRes(),
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(redis.incr).not.toHaveBeenCalled();
+  });
+
+  it('uses Bot systemPrompt as first system message when non-empty', async () => {
+    prisma.conversation.findFirst.mockResolvedValue({
+      id: conversationId,
+      bot: { systemPrompt: '你是日程助手', deletedAt: null },
+    });
+
+    await runHappyStream();
+
+    expect(streamTextMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({ role: 'system', content: '你是日程助手' }),
+        ]),
+      }),
+    );
+    const { messages } = streamTextMock.mock.calls[0]?.[0] as {
+      messages: Array<{ role: string; content: unknown }>;
+    };
+    expect(messages[0]).toEqual({ role: 'system', content: '你是日程助手' });
+    expect(messages[0]?.content).not.toBe('全局默认');
+    expect(JSON.stringify(messages)).not.toContain('全局默认');
+  });
+
+  it('falls back to CHAT_SYSTEM_PROMPT when Bot systemPrompt empty', async () => {
+    prisma.conversation.findFirst.mockResolvedValue({
+      id: conversationId,
+      bot: { systemPrompt: '   ', deletedAt: null },
+    });
+
+    await runHappyStream();
+
+    const { messages } = streamTextMock.mock.calls[0]?.[0] as {
+      messages: Array<{ role: string; content: unknown }>;
+    };
+    expect(messages[0]).toEqual({ role: 'system', content: '全局默认' });
+  });
+
+  it('keeps historical role=system messages after prepended system', async () => {
+    prisma.conversation.findFirst.mockResolvedValue({
+      id: conversationId,
+      bot: { systemPrompt: '你是日程助手', deletedAt: null },
+    });
+
+    await runHappyStream({
+      messages: [
+        {
+          id: 'msg-sys',
+          role: 'system',
+          content: '历史系统补充',
+          parts: [{ type: 'text', text: '历史系统补充' }],
+          createdAt: new Date('2020-01-01T00:00:00.000Z'),
+        },
+        {
+          id: 'msg-user',
+          role: 'user',
+          content: 'hi',
+          parts: [{ type: 'text', text: 'hi' }],
+          createdAt: new Date('2020-01-02T00:00:00.000Z'),
+        },
+      ],
+    });
+
+    const { messages } = streamTextMock.mock.calls[0]?.[0] as {
+      messages: Array<{ role: string; content: unknown }>;
+    };
+    expect(messages[0]).toEqual({ role: 'system', content: '你是日程助手' });
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'system', content: '历史系统补充' }),
+      ]),
+    );
+    expect(
+      messages.findIndex((m) => m.content === '你是日程助手'),
+    ).toBeLessThan(messages.findIndex((m) => m.content === '历史系统补充'));
   });
 
   it('throws 429 when concurrent streams exceeded', async () => {
