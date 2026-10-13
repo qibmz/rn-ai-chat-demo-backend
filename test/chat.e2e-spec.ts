@@ -64,7 +64,12 @@ describe('Chat API (e2e)', () => {
     expect((res.body as ApiBody).code).toBe(401);
   });
 
-  it('注册后可查询额度并创建会话', async () => {
+  it('GET /bots 无 JWT 时返回 401', async () => {
+    const res = await request(app.getHttpServer()).get('/bots').expect(401);
+    expect((res.body as ApiBody).code).toBe(401);
+  });
+
+  it('注册后有主 Bot，可创建子 Bot 并拉空消息列表', async () => {
     const email = `chat-e2e-${randomUUID()}@example.com`;
     const password = 'password123';
 
@@ -76,36 +81,38 @@ describe('Chat API (e2e)', () => {
       register.body as ApiBody & { data: { accessToken: string } }
     ).data.accessToken;
 
-    const quota = await request(app.getHttpServer())
-      .get('/chat/quota')
+    const bots = await request(app.getHttpServer())
+      .get('/bots')
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
-
-    const quotaBody = quota.body as ApiBody & {
-      data: {
-        usedPercent: number;
-        remainingPercent: number;
-        resetsAt: string;
-        resetsInSeconds: number;
-      };
-    };
-    expect(quotaBody.code).toBe(200);
-    expect(quotaBody.data.usedPercent).toBeGreaterThanOrEqual(0);
-    expect(quotaBody.data.remainingPercent).toBeGreaterThanOrEqual(0);
-    expect(quotaBody.data.resetsAt).toBeDefined();
-    expect(quotaBody.data.resetsInSeconds).toBeGreaterThan(0);
-
-    const list = await request(app.getHttpServer())
-      .get('/chat/conversations')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .expect(200);
-    expect((list.body as ApiBody).code).toBe(200);
+    const botsData = (bots.body as ApiBody).data as Array<{
+      kind: string;
+      conversationId: string;
+    }>;
+    expect(botsData.some((b) => b.kind === 'main')).toBe(true);
 
     const created = await request(app.getHttpServer())
-      .post('/chat/conversations')
+      .post('/bots')
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ title: 'e2e' })
+      .send({
+        name: 'e2e子Bot',
+        faceColor: '#DB2777',
+        faceShape: 'squircle',
+      })
       .expect(201);
-    expect((created.body as ApiBody).data).toMatchObject({ title: 'e2e' });
+    const bot = (created.body as ApiBody).data as {
+      conversationId: string;
+      kind: string;
+    };
+    expect(bot.kind).toBe('sub');
+
+    const messages = await request(app.getHttpServer())
+      .get(`/chat/conversations/${bot.conversationId}/messages`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    expect((messages.body as ApiBody).data).toMatchObject({
+      items: [],
+      hasMore: false,
+    });
   }, 60_000);
 });
