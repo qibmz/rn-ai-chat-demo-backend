@@ -275,7 +275,9 @@ describe('ChatStreamService', () => {
         ]),
       }),
     );
-    const { messages } = streamTextMock.mock.calls[0]?.[0] as {
+    const botPromptCall = streamTextMock.mock.calls[0];
+    expect(botPromptCall).toBeDefined();
+    const { messages } = botPromptCall![0] as {
       messages: Array<{ role: string; content: unknown }>;
     };
     expect(messages[0]).toEqual({ role: 'system', content: '你是日程助手' });
@@ -291,7 +293,9 @@ describe('ChatStreamService', () => {
 
     await runHappyStream();
 
-    const { messages } = streamTextMock.mock.calls[0]?.[0] as {
+    const emptyBotCall = streamTextMock.mock.calls[0];
+    expect(emptyBotCall).toBeDefined();
+    const { messages } = emptyBotCall![0] as {
       messages: Array<{ role: string; content: unknown }>;
     };
     expect(messages[0]).toEqual({ role: 'system', content: '全局默认' });
@@ -322,7 +326,9 @@ describe('ChatStreamService', () => {
       ],
     });
 
-    const { messages } = streamTextMock.mock.calls[0]?.[0] as {
+    const historySysCall = streamTextMock.mock.calls[0];
+    expect(historySysCall).toBeDefined();
+    const { messages } = historySysCall![0] as {
       messages: Array<{ role: string; content: unknown }>;
     };
     expect(messages[0]).toEqual({ role: 'system', content: '你是日程助手' });
@@ -563,7 +569,9 @@ describe('ChatStreamService', () => {
     });
 
     expect(streamTextMock).toHaveBeenCalled();
-    const { messages } = streamTextMock.mock.calls[0]?.[0] as {
+    const reasoningCall = streamTextMock.mock.calls[0];
+    expect(reasoningCall).toBeDefined();
+    const { messages } = reasoningCall![0] as {
       messages: Array<{ role: string; content: unknown }>;
     };
     const assistant = messages.find((m) => m.role === 'assistant');
