@@ -45,6 +45,13 @@ lerna-debug.log*
 .devin
 .cursor/skills
 
+# npm lockfile — CI / local use pnpm (pnpm-lock.yaml)
+package-lock.json
+
 # misc
 *.tsbuildinfo
 .eslintcache
+
+# Superpowers / local worktrees
+.worktrees/
+

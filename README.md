@@ -37,10 +37,10 @@ NestJS 12：Prisma + PostgreSQL、Redis、BullMQ、JWT、Winston、Swagger、Git
 ```bash
 cp .env.example .env
 docker compose up -d          # Postgres + Redis
-npm install
-npx prisma migrate deploy
-npm run prisma:seed
-npm run start:dev
+pnpm install
+pnpm exec prisma migrate deploy
+pnpm run prisma:seed
+pnpm run start:dev
 ```
 
 |         | URL                            |
@@ -57,25 +57,29 @@ Seed 默认账号：`admin@example.com` / `password123`（可用 `SEED_EMAIL` / 
 
 复制 `.env.example` 后按需填写。常用变量：
 
-| 变量                                       | 说明                                                                       |
-| ------------------------------------------ | -------------------------------------------------------------------------- |
-| `DATABASE_URL`                             | PostgreSQL 连接串                                                          |
-| `REDIS_URL` / `REDIS_HOST` + `REDIS_PORT`  | Redis                                                                      |
-| `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` | JWT 密钥（本地务必改掉）                                                   |
-| `SEED_EMAIL` / `SEED_PASSWORD`             | `prisma:seed` 演示用户                                                     |
-| `SENTRY_DSN`                               | 可选；空则禁用 Sentry                                                      |
-| `SENTRY_TRACES_SAMPLE_RATE`                | 默认 `0.1`                                                                 |
-| `RESEND_API_KEY`                           | 可选；空则邮件 job 只打日志                                                |
-| `APP_NAME`                                 | 产品展示名（邮件 / Swagger / 日志），默认见 `.env.example`                 |
-| `APP_URL`                                  | 邮件确认链接前缀，默认 `http://localhost:3000`                             |
-| `EMAIL_VERIFY_EXPIRES_IN`                  | 确认 token 有效期，默认 `24h`                                              |
-| `EMAIL_VERIFY_COOLDOWN`                    | 重发确认邮件冷却，默认 `60s`                                               |
-| `EMAIL_VERIFICATION_REQUIRED`              | `true` 时未验证邮箱禁止登录（403），默认 `false`                           |
-| `PASSWORD_RESET_EXPIRES_IN`                | 忘记密码验证码有效期，默认 `15m`（8 位数字码）                             |
-| `PASSWORD_RESET_COOLDOWN`                  | 忘记密码发送冷却，默认 `60s`                                               |
-| `CORS_ORIGINS`                             | 生产允许源（逗号分隔）；开发环境忽略并放行任意 Origin；生产未配则同源 only |
-| `THROTTLE_TTL_MS` / `THROTTLE_LIMIT`       | 全局 HTTP 限流（Redis 共享，默认 60s / 100）                               |
-| `MAIL_FROM`                                | 发件人；为空时回退为 `APP_NAME <onboarding@resend.dev>`                    |
+| 变量                                                          | 说明                                                                                                               |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`                                                | PostgreSQL 连接串                                                                                                  |
+| `REDIS_URL` / `REDIS_HOST` + `REDIS_PORT`                     | Redis                                                                                                              |
+| `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET`                    | JWT 密钥（本地务必改掉）                                                                                           |
+| `SEED_EMAIL` / `SEED_PASSWORD`                                | `prisma:seed` 演示用户                                                                                             |
+| `SENTRY_DSN`                                                  | 可选；空则禁用 Sentry                                                                                              |
+| `SENTRY_TRACES_SAMPLE_RATE`                                   | 默认 `0.1`                                                                                                         |
+| `RESEND_API_KEY`                                              | 可选；空则邮件 job 只打日志                                                                                        |
+| `APP_NAME`                                                    | 产品展示名（邮件 / Swagger / 日志），默认见 `.env.example`                                                         |
+| `APP_URL`                                                     | 邮件确认链接前缀，默认 `http://localhost:3000`                                                                     |
+| `EMAIL_VERIFY_EXPIRES_IN`                                     | 确认 token 有效期，默认 `24h`                                                                                      |
+| `EMAIL_VERIFY_COOLDOWN`                                       | 重发确认邮件冷却，默认 `60s`                                                                                       |
+| `EMAIL_VERIFICATION_REQUIRED`                                 | `true` 时未验证邮箱禁止登录（403），默认 `false`                                                                   |
+| `PASSWORD_RESET_EXPIRES_IN`                                   | 忘记密码验证码有效期，默认 `15m`（8 位数字码）                                                                     |
+| `PASSWORD_RESET_COOLDOWN`                                     | 忘记密码发送冷却，默认 `60s`                                                                                       |
+| `CORS_ORIGINS`                                                | 生产允许源（逗号分隔）；开发环境忽略并放行任意 Origin；生产未配则同源 only                                         |
+| `THROTTLE_TTL_MS` / `THROTTLE_LIMIT`                          | 全局 HTTP 限流（Redis 共享，默认 60s / 100）                                                                       |
+| `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | LLM（本迭代仅 `deepseek`；必填 key；占位会被拒绝）。本地若仍有 `DEEPSEEK_*` 需**手动**改为 `LLM_*`（无运行时别名） |
+| `CHAT_ATTACHMENT_STORAGE`                                     | `r2`（默认）或 `disabled`（纯文本 / CI，不上传附件）                                                               |
+| `CHAT_USER_WEEKLY_BUDGET_CNY`                                 | 每用户周预算（软限制，对外只返回百分比）                                                                           |
+| `CHAT_MAX_CONCURRENT_STREAMS`                                 | 同一用户并发流式请求上限                                                                                           |
+| `MAIL_FROM`                                                   | 发件人；为空时回退为 `APP_NAME <onboarding@resend.dev>`                                                            |
 
 ### Sentry Cloud（可选）
 
@@ -121,11 +125,74 @@ Seed 默认账号：`admin@example.com` / `password123`（可用 `SEED_EMAIL` / 
 
 ### Security notes
 
-- 全局 Throttler（Redis 共享）；auth 敏感接口更严（如 login 10/min、forgot 5/min）；登录另有每账号失败计数。
+- 全局 Throttler（Redis 共享）：**已登录请求按 `userId` 计数**，未登录按 IP；auth 敏感接口更严（如 login 10/min、forgot 5/min）；登录另有每账号失败计数。
 - JWT 占位密钥会被 `validateEnv` 拒绝；反代环境请设 `TRUST_PROXY=1`。
 - `EMAIL_VERIFICATION_REQUIRED=true` 时未验证邮箱登录返回 403。
 - 邮箱入库/查询统一 `trim().toLowerCase()`。
 - `resend-verification` 不暴露是否已验证；刷新令牌重用会吊销该用户全部会话。
+
+## Chat（`@ai-sdk/deepseek` + UI Message Stream）
+
+所有聊天接口需 **Bearer JWT**。服务端用 `@ai-sdk/deepseek` + `streamText` 生成回复，经 `createUIMessageStream` / `pipeUIMessageStreamToResponse` 写出 AI SDK **UI Message Stream**（`Content-Type: text/event-stream`）；落盘在 `createUIMessageStream.onEnd`。与 `@ai-sdk/react` 的 `useChat` + `DefaultChatTransport` 对齐。
+
+| Method | Path                                      | 说明                         | 限流（约） |
+| ------ | ----------------------------------------- | ---------------------------- | ---------- |
+| GET    | `/chat/quota`                             | 本周额度（百分比）           | 60/min     |
+| GET    | `/chat/conversations`                     | 会话列表                     | 60/min     |
+| POST   | `/chat/conversations`                     | 创建会话                     | 20/min     |
+| GET    | `/chat/conversations/:id`                 | 会话详情                     | 60/min     |
+| PATCH  | `/chat/conversations/:id`                 | 改标题 / 软删除              | 20/min     |
+| GET    | `/chat/conversations/:id/messages`        | 分页历史（图片附件现签）     | 60/min     |
+| POST   | `/chat/conversations/:id/messages/stream` | 流式发消息                   | **10/min** |
+| POST   | `/chat/attachments`                       | 上传图片（multipart `file`） | **10/min** |
+| GET    | `/chat/attachments/:id`                   | 附件临时 GET URL             | 60/min     |
+
+### 额度（软预算）
+
+`GET /chat/quota` 的 `data` 示例字段：
+
+| 字段                               | 说明                                      |
+| ---------------------------------- | ----------------------------------------- |
+| `usedPercent` / `remainingPercent` | 本周已用 / 剩余百分比（0–100，四位小数）  |
+| `usedRatio`                        | 已用比例 0–1                              |
+| `period`                           | 当前自然周标识（上海时区）                |
+| `resetsAt`                         | 下次重置时间（ISO 8601，下周一 0 点上海） |
+| `resetsInSeconds`                  | 距离重置的秒数                            |
+
+内部按 token 用量与 `CHAT_USER_WEEKLY_BUDGET_CNY` 折算微元记账。周累计写入 Postgres `chat_weekly_spends`（账本），Redis 仅作热缓存；缓存 miss / flush 后从库回填，避免额度被「清零重计」。开流前若已用 ≥ 预算返回 429；并发竞态下可能略超（软限制），进度百分比可超过 100。
+
+### 附件
+
+1. `POST /chat/attachments`，`multipart/form-data` 字段名 `file`（JPEG/PNG/GIF/WebP，大小见 `CHAT_MAX_IMAGE_BYTES`）。
+2. 响应 `{ id, mimeType, byteSize }`；在流式 body 的 `attachmentIds` 中引用。
+3. 历史消息列表会对图片附件 **现签** 临时 URL。
+4. `CHAT_ATTACHMENT_STORAGE=disabled` 时 R2 不启用，上传接口返回 **503**「附件存储未启用」——本地纯文本联调可保持 disabled（与 e2e 一致）。
+
+### React Native + Gluestack Chat AI（useChat）
+
+```tsx
+import { useChat } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
+import { fetch as expoFetch } from 'expo/fetch';
+
+const API_BASE = 'https://your-api.example.com'; // 或开发机 IP:3000
+const conversationId = '…'; // POST /chat/conversations 返回的 id
+const accessToken = '…'; // POST /auth/login
+
+const { messages, sendMessage, status } = useChat({
+  transport: new DefaultChatTransport({
+    api: `${API_BASE}/chat/conversations/${conversationId}/messages/stream`,
+    fetch: expoFetch as typeof globalThis.fetch,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  }),
+});
+```
+
+- 请求体为 AI SDK **UIMessage[]**（`messages`），可选 `thinking`、`reasoningEffort`、`attachmentIds`。
+- 先调 `GET /chat/quota` 展示 `usedPercent` / `resetsAt` / `resetsInSeconds`，再发消息。
+- 图片：在 `sendMessage` 前上传附件拿到 `id`，本轮 payload 带上 `attachmentIds`（storage 为 `r2` 时）。
 
 ## Response contract
 

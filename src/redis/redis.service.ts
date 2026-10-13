@@ -87,6 +87,31 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return value;
   }
 
+  async decr(key: string): Promise<number> {
+    return this.client.decr(key);
+  }
+
+  /**
+   * Increment by integer amount; set TTL only when the key has no expiry yet.
+   * Returns the value after increment.
+   */
+  async incrby(
+    key: string,
+    amount: number | bigint,
+    ttlSeconds?: number,
+  ): Promise<number> {
+    const delta =
+      typeof amount === 'bigint' ? Number(amount) : Math.trunc(amount);
+    const value = await this.client.incrby(key, delta);
+    if (ttlSeconds && ttlSeconds > 0) {
+      const ttl = await this.client.ttl(key);
+      if (ttl < 0) {
+        await this.client.expire(key, ttlSeconds);
+      }
+    }
+    return value;
+  }
+
   async sadd(key: string, member: string): Promise<void> {
     await this.client.sadd(key, member);
   }

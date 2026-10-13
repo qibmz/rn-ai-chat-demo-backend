@@ -6,6 +6,10 @@ const base = {
   REDIS_URL: 'redis://localhost:6379',
   JWT_ACCESS_SECRET: 'local-dev-access-secret-not-in-example!!',
   JWT_REFRESH_SECRET: 'local-dev-refresh-secret-not-in-example!',
+  LLM_API_KEY: 'test-llm-key-not-placeholder',
+  LLM_BASE_URL: 'https://api.deepseek.com/v1',
+  LLM_MODEL: 'deepseek-flash',
+  CHAT_ATTACHMENT_STORAGE: 'disabled',
 };
 
 describe('validateEnv', () => {
@@ -33,5 +37,86 @@ describe('validateEnv', () => {
 
   it('rejects invalid PORT', () => {
     expect(() => validateEnv({ ...base, PORT: 'abc' })).toThrow(/PORT/);
+  });
+
+  it('rejects placeholder LLM_API_KEY', () => {
+    expect(() => validateEnv({ ...base, LLM_API_KEY: 'change-me' })).toThrow(
+      /LLM_API_KEY/,
+    );
+  });
+
+  it('allows test- prefixed LLM_API_KEY for e2e', () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        LLM_API_KEY: 'test-llm-key-not-placeholder',
+      }),
+    ).not.toThrow();
+  });
+
+  it('accepts LLM_PROVIDER=deepseek', () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        LLM_PROVIDER: 'deepseek',
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects unknown LLM_PROVIDER', () => {
+    expect(() => validateEnv({ ...base, LLM_PROVIDER: 'qwen' })).toThrow(
+      /LLM_PROVIDER/,
+    );
+  });
+
+  it('rejects missing LLM_BASE_URL', () => {
+    const { LLM_BASE_URL: _, ...without } = base;
+    expect(() => validateEnv(without)).toThrow(/LLM_BASE_URL/);
+  });
+
+  it('rejects short LLM_BASE_URL', () => {
+    expect(() => validateEnv({ ...base, LLM_BASE_URL: 'http://' })).toThrow(
+      /LLM_BASE_URL/,
+    );
+  });
+
+  it('rejects missing LLM_MODEL', () => {
+    const { LLM_MODEL: _, ...without } = base;
+    expect(() => validateEnv(without)).toThrow(/LLM_MODEL/);
+  });
+
+  it('rejects empty LLM_MODEL', () => {
+    expect(() => validateEnv({ ...base, LLM_MODEL: '   ' })).toThrow(
+      /LLM_MODEL/,
+    );
+  });
+
+  it('requires R2_* when CHAT_ATTACHMENT_STORAGE=r2', () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        CHAT_ATTACHMENT_STORAGE: 'r2',
+      }),
+    ).toThrow(/R2_ACCOUNT_ID/);
+  });
+
+  it('accepts r2 storage with R2 credentials', () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        CHAT_ATTACHMENT_STORAGE: 'r2',
+        R2_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
+        R2_ACCESS_KEY_ID: 'test-r2-access-key-id',
+        R2_SECRET_ACCESS_KEY: 'test-r2-secret-access-key',
+        R2_BUCKET: 'niuma-ai-chat-attachments',
+        R2_ENDPOINT: 'https://example.r2.cloudflarestorage.com',
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects invalid CHAT_REASONING_EFFORT_DEFAULT', () => {
+    expect(() =>
+      validateEnv({ ...base, CHAT_REASONING_EFFORT_DEFAULT: 'medium' }),
+    ).toThrow(/CHAT_REASONING_EFFORT_DEFAULT/);
   });
 });

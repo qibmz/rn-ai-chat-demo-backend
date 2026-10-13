@@ -9,6 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import * as Sentry from '@sentry/nestjs';
 import { Request, Response } from 'express';
+import { MulterError } from 'multer';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { ApiErrorResponse } from '../interfaces/api-response.interface.js';
@@ -28,7 +29,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const request = ctx.getRequest<Request>();
 
     if (request.url === '/favicon.ico') {
-      response.status(204).end();
+      if (!response.headersSent) {
+        response.status(204).end();
+      }
       return;
     }
 
@@ -47,11 +50,28 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode,
       message,
       stack: exception instanceof Error ? exception.stack : undefined,
+      headersSent: response.headersSent,
     };
     if (statusCode >= 500) {
       this.logger.error('Unhandled exception', logPayload);
     } else {
       this.logger.warn('HTTP exception', logPayload);
+    }
+
+    // Stream already started (AI SDK UI Message Stream / SSE): never call .json()
+    if (response.headersSent) {
+      if (!response.writableEnded) {
+        try {
+          // UI Message Stream schema: { type: 'error', errorText }
+          response.write(
+            `data: ${JSON.stringify({ type: 'error', errorText: message })}\n\n`,
+          );
+        } catch {
+          // ignore write failures on a half-closed socket
+        }
+        response.end();
+      }
+      return;
     }
 
     const body: ApiErrorResponse = {
@@ -70,6 +90,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
     message: string;
     errors: string[] | null;
   } {
+    if (exception instanceof MulterError) {
+      if (exception.code === 'LIMIT_FILE_SIZE') {
+        return {
+          statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
+          message: '图片大小超出限制',
+          errors: null,
+        };
+      }
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: '上传文件无效',
+        errors: null,
+      };
+    }
+
     if (exception instanceof HttpException) {
       const statusCode = exception.getStatus();
       const res = exception.getResponse();

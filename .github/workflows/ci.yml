@@ -20,24 +20,28 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # version from package.json#packageManager
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Validate commit messages
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            npx commitlint --from "${{ github.event.pull_request.base.sha }}" --to "${{ github.event.pull_request.head.sha }}" --verbose
+            pnpm exec commitlint --from "${{ github.event.pull_request.base.sha }}" --to "${{ github.event.pull_request.head.sha }}" --verbose
           else
             if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
-              npx commitlint --from HEAD~1 --to HEAD --verbose || npx commitlint --last --verbose
+              pnpm exec commitlint --from HEAD~1 --to HEAD --verbose || pnpm exec commitlint --last --verbose
             else
-              npx commitlint --from "${{ github.event.before }}" --to "${{ github.sha }}" --verbose
+              pnpm exec commitlint --from "${{ github.event.before }}" --to "${{ github.sha }}" --verbose
             fi
           fi
 
@@ -85,41 +89,45 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # version from package.json#packageManager
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        # Avoid job-level NODE_ENV affecting optional peer resolution in npm ci
+        # Avoid job-level NODE_ENV affecting optional peer resolution
         env:
           NODE_ENV: development
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Prisma generate
-        run: npx prisma generate
+        run: pnpm exec prisma generate
 
       - name: Prisma migrate
-        run: npx prisma migrate deploy
+        run: pnpm exec prisma migrate deploy
 
       - name: Format check
-        run: npm run format:check
+        run: pnpm run format:check
 
       - name: Lint
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Typecheck
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: Typecheck (incl. tests)
-        run: npm run typecheck:all
+        run: pnpm run typecheck:all
 
       - name: Test with coverage
-        run: npm run test:cov
+        run: pnpm run test:cov
 
       - name: E2E
-        run: npm run test:e2e
+        run: pnpm run test:e2e
 
       - name: Build
-        run: npm run build
+        run: pnpm run build

@@ -4,8 +4,10 @@ import {
   Injectable,
   NestInterceptor,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { Observable, map } from 'rxjs';
+import { AI_UI_STREAM_KEY } from '../decorators/ai-ui-stream.decorator.js';
 import { ApiSuccessResponse } from '../interfaces/api-response.interface.js';
 import { sanitizeRequestPath } from '../utils/sanitize-request-path.js';
 
@@ -14,6 +16,8 @@ export class TransformInterceptor<T> implements NestInterceptor<
   T,
   ApiSuccessResponse<T | null>
 > {
+  constructor(private readonly reflector: Reflector) {}
+
   intercept(
     context: ExecutionContext,
     next: CallHandler<T>,
@@ -22,7 +26,12 @@ export class TransformInterceptor<T> implements NestInterceptor<
     const path = sanitizeRequestPath(request.url ?? '');
     const method = request.method ?? 'GET';
 
-    if (this.shouldSkip(request.url ?? '', method)) {
+    const isAiUiStream = this.reflector.getAllAndOverride<boolean>(
+      AI_UI_STREAM_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (isAiUiStream || this.shouldSkip(request.url ?? '', method)) {
       return next.handle() as unknown as Observable<
         ApiSuccessResponse<T | null>
       >;

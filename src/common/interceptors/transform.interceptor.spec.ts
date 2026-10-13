@@ -1,16 +1,27 @@
 import { CallHandler, ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { of, firstValueFrom } from 'rxjs';
+import { AI_UI_STREAM_KEY } from '../decorators/ai-ui-stream.decorator.js';
 import { TransformInterceptor } from './transform.interceptor.js';
 
 describe('TransformInterceptor', () => {
-  const interceptor = new TransformInterceptor();
+  const reflector = new Reflector();
+  const interceptor = new TransformInterceptor(reflector);
 
-  function mockContext(url: string, method = 'GET'): ExecutionContext {
+  function mockContext(
+    url: string,
+    method = 'GET',
+    meta: Record<string, unknown> = {},
+  ): ExecutionContext {
+    const handler = () => undefined;
+    Reflect.defineMetadata(AI_UI_STREAM_KEY, meta[AI_UI_STREAM_KEY], handler);
     return {
       switchToHttp: () => ({
         getRequest: () => ({ url, method }),
       }),
-    } as ExecutionContext;
+      getHandler: () => handler,
+      getClass: () => class TestController {},
+    } as unknown as ExecutionContext;
   }
 
   it('wraps successful responses in unified envelope', async () => {
@@ -47,5 +58,19 @@ describe('TransformInterceptor', () => {
       ),
     );
     expect(result).toBe(html);
+  });
+
+  it('skips wrapping when handler has @AiUiStream metadata', async () => {
+    const payload = { stream: true };
+    const next: CallHandler = { handle: () => of(payload) };
+    const result = await firstValueFrom(
+      interceptor.intercept(
+        mockContext('/conversations/x/messages/stream', 'POST', {
+          [AI_UI_STREAM_KEY]: true,
+        }),
+        next,
+      ),
+    );
+    expect(result).toEqual(payload);
   });
 });
