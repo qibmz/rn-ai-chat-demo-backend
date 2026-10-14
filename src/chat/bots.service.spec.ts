@@ -341,6 +341,43 @@ describe('BotsService', () => {
     expect(list[0].lastMessageAt).toBe('2026-10-13T01:00:00.000Z');
   });
 
+  it('list preview truncates by code point without splitting emoji', async () => {
+    const longEmoji = '😂'.repeat(100);
+    prisma.bot.findFirst.mockResolvedValue({
+      id: botId,
+      kind: BotKind.main,
+      conversation: { id: conversationId },
+    });
+    prisma.bot.findMany.mockResolvedValue([
+      {
+        id: botId,
+        userId,
+        name: '牛马',
+        kind: BotKind.main,
+        faceColor: '#0A0A0A',
+        faceShape: BotFaceShape.circle,
+        systemPrompt: null,
+        deletedAt: null,
+        createdAt: new Date('2026-10-13T00:00:00.000Z'),
+        updatedAt: new Date('2026-10-13T00:00:00.000Z'),
+        conversation: { id: conversationId },
+      },
+    ]);
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        conversation_id: conversationId,
+        content: longEmoji,
+        parts: [],
+        created_at: new Date('2026-10-13T01:00:00.000Z'),
+      },
+    ]);
+
+    const list = await service.list(userId);
+    const preview = list[0]!.lastMessagePreview!;
+    expect(preview).toBe('😂'.repeat(80));
+    expect(Array.from(preview)).toHaveLength(80);
+  });
+
   it('list orders main first then subs by updatedAt desc', async () => {
     const subOldId = 'cccccccc-cccc-4111-8111-cccccccccccc';
     const subNewId = 'dddddddd-dddd-4111-8111-dddddddddddd';

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -51,7 +52,7 @@ export class BotsService {
     preview: { text: string | null; at: Date | null },
   ): BotDto {
     if (!row.conversation) {
-      throw new Error(`Bot ${row.id} missing conversation`);
+      throw new InternalServerErrorException('Bot 数据异常：缺少关联会话');
     }
     return {
       id: row.id,
@@ -71,8 +72,10 @@ export class BotsService {
   private formatPreview(content: string, parts: unknown): string | null {
     const trimmed = content?.trim() ?? '';
     if (trimmed) {
-      return trimmed.length > PREVIEW_MAX
-        ? trimmed.slice(0, PREVIEW_MAX)
+      // 按 Unicode 码点截断，避免切断 emoji 代理对
+      const chars = Array.from(trimmed);
+      return chars.length > PREVIEW_MAX
+        ? chars.slice(0, PREVIEW_MAX).join('')
         : trimmed;
     }
     const arr = Array.isArray(parts) ? parts : [];
