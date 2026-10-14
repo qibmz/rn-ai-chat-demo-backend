@@ -100,6 +100,8 @@ export class BotsService {
     if (conversationIds.length === 0) {
       return map;
     }
+    // Prisma.join 默认绑成 text；conversation_id 是 uuid，需显式 ::uuid
+    const idParams = conversationIds.map((id) => Prisma.sql`${id}::uuid`);
     const rows = await this.prisma.$queryRaw<
       Array<{
         conversation_id: string;
@@ -114,7 +116,7 @@ export class BotsService {
         m.parts,
         m.created_at
       FROM messages m
-      WHERE m.conversation_id IN (${Prisma.join(conversationIds)})
+      WHERE m.conversation_id IN (${Prisma.join(idParams)})
         AND m.role IN ('user'::"MessageRole", 'assistant'::"MessageRole")
       ORDER BY m.conversation_id, m.created_at DESC
     `);
