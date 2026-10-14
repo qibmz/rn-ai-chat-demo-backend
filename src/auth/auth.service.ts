@@ -18,6 +18,10 @@ import {
 import { BotsService } from '../chat/bots.service.js';
 import { normalizeEmail } from '../common/utils/normalize-email.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  renderPasswordResetEmailHtml,
+  renderVerifyEmailHtml,
+} from '../queues/email/email-templates.js';
 import { EmailQueue } from '../queues/email/email.queue.js';
 import { RedisService } from '../redis/redis.service.js';
 import { UsersService } from '../users/users.service.js';
@@ -211,7 +215,7 @@ export class AuthService {
       to: user.email,
       subject: `密码重置验证码 — ${appName}`,
       body: `你的密码重置验证码是 ${code}，有效期 ${expiresIn}。如非本人操作请忽略本邮件。`,
-      html: `<p>你正在重置 ${escapeHtml(appName)} 账号密码。</p><p style="font-size:24px;letter-spacing:4px"><strong>${code}</strong></p><p>验证码有效期为 ${expiresIn}。如非本人操作，请忽略本邮件。</p>`,
+      html: renderPasswordResetEmailHtml({ appName, code, expiresIn }),
     });
 
     // Arm cooldown only after enqueue (prevents pre-burn DoS on victims)
@@ -383,7 +387,7 @@ export class AuthService {
       to: email,
       subject: `请验证你的邮箱 — ${appName}`,
       body: `请打开以下链接完成邮箱验证（有效期 ${expiresIn}）：\n${verifyUrl}\n\n如链接无法点击，可将完整地址复制到浏览器打开。`,
-      html: `<p>欢迎使用 ${escapeHtml(appName)}，请验证你的邮箱。</p><p><a href="${verifyUrl}">点击验证邮箱</a></p><p>链接有效期为 ${expiresIn}。</p><p>若按钮无法打开，请复制以下地址到浏览器：</p><p><a href="${verifyUrl}">${escapeHtml(verifyUrl)}</a></p>`,
+      html: renderVerifyEmailHtml({ appName, verifyUrl, expiresIn }),
     });
   }
 
@@ -499,12 +503,4 @@ export class AuthService {
         throw new Error(`无效的时长单位: ${unit}`);
     }
   }
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
 }
