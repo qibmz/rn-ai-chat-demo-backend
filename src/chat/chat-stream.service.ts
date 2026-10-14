@@ -57,7 +57,10 @@ export class ChatStreamService {
     dto: StreamMessagesDto,
     res: Response,
   ): Promise<void> {
-    await this.assertConversation(userId, conversationId);
+    const { systemPrompt: botSystemPrompt } = await this.assertConversation(
+      userId,
+      conversationId,
+    );
 
     const maxConcurrent = Number(
       this.configService.get('CHAT_MAX_CONCURRENT_STREAMS', '2'),
@@ -141,6 +144,7 @@ export class ChatStreamService {
       const modelMessages = await this.buildModelMessages(
         userId,
         conversationId,
+        botSystemPrompt,
       );
 
       const abortController = new AbortController();
@@ -271,14 +275,18 @@ export class ChatStreamService {
   private async assertConversation(
     userId: string,
     conversationId: string,
-  ): Promise<void> {
+  ): Promise<{ systemPrompt: string | null }> {
     const row = await this.prisma.conversation.findFirst({
       where: { id: conversationId, userId, deletedAt: null },
-      select: { id: true },
+      select: {
+        id: true,
+        bot: { select: { systemPrompt: true, deletedAt: true } },
+      },
     });
-    if (!row) {
+    if (!row || row.bot?.deletedAt) {
       throw new NotFoundException('对话不存在');
     }
+    return { systemPrompt: row.bot?.systemPrompt ?? null };
   }
 
   private extractLastUserText(messages: StreamMessagesDto['messages']): string {
@@ -364,6 +372,7 @@ export class ChatStreamService {
   private async buildModelMessages(
     userId: string,
     conversationId: string,
+    botSystemPrompt: string | null,
   ): Promise<ModelMessage[]> {
     const maxTurns = Number(
       this.configService.get('CHAT_CONTEXT_MAX_TURNS', '20'),
@@ -378,8 +387,10 @@ export class ChatStreamService {
       'CHAT_IMAGE_DETAIL',
       'low',
     );
-    const systemPrompt =
+    const globalPrompt =
       this.configService.get<string>('CHAT_SYSTEM_PROMPT', '')?.trim() ?? '';
+    const trimmedBot = botSystemPrompt?.trim() ?? '';
+    const systemPrompt = trimmedBot || globalPrompt;
 
     const rows = await this.prisma.message.findMany({
       where: { conversationId },

@@ -138,8 +138,11 @@ Seed 默认账号：`admin@example.com` / `password123`（可用 `SEED_EMAIL` / 
 | Method | Path                                      | 说明                         | 限流（约） |
 | ------ | ----------------------------------------- | ---------------------------- | ---------- |
 | GET    | `/chat/quota`                             | 本周额度（百分比）           | 60/min     |
-| GET    | `/chat/conversations`                     | 会话列表                     | 60/min     |
-| POST   | `/chat/conversations`                     | 创建会话                     | 20/min     |
+| GET    | `/bots`                                   | Bot 列表（含预览）           | 60/min     |
+| POST   | `/bots`                                   | 创建子 Bot + 唯一会话        | 20/min     |
+| GET    | `/bots/:id`                               | Bot 详情                     | 60/min     |
+| PATCH  | `/bots/:id`                               | 更新 Bot / 软删子 Bot        | 20/min     |
+| GET    | `/chat/conversations`                     | 会话列表（含 `botId`）       | 60/min     |
 | GET    | `/chat/conversations/:id`                 | 会话详情                     | 60/min     |
 | PATCH  | `/chat/conversations/:id`                 | 改标题 / 软删除              | 20/min     |
 | GET    | `/chat/conversations/:id/messages`        | 分页历史（图片附件现签）     | 60/min     |
@@ -176,7 +179,7 @@ import { DefaultChatTransport } from 'ai';
 import { fetch as expoFetch } from 'expo/fetch';
 
 const API_BASE = 'https://your-api.example.com'; // 或开发机 IP:3000
-const conversationId = '…'; // POST /chat/conversations 返回的 id
+const conversationId = '…'; // GET /bots 或 POST /bots 返回的 conversationId
 const accessToken = '…'; // POST /auth/login
 
 const { messages, sendMessage, status } = useChat({

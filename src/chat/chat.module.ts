@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { BotsController } from './bots.controller.js';
+import { BotsService } from './bots.service.js';
 import { ChatAttachmentsController } from './chat-attachments.controller.js';
 import { ChatAttachmentsService } from './chat-attachments.service.js';
 import { ChatBillingService } from './chat-billing.service.js';
@@ -14,11 +16,13 @@ import { R2Module } from '../storage/r2/r2.module.js';
 @Module({
   imports: [R2Module],
   controllers: [
+    BotsController,
     ChatAttachmentsController,
     ChatConversationsController,
     ChatQuotaController,
   ],
   providers: [
+    BotsService,
     ChatAttachmentsService,
     ChatBillingService,
     ChatConversationsService,
@@ -28,6 +32,7 @@ import { R2Module } from '../storage/r2/r2.module.js';
     ChatFileUploadInterceptor,
   ],
   exports: [
+    BotsService,
     ChatAttachmentsService,
     ChatBillingService,
     ChatConversationsService,

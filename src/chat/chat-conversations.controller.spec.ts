@@ -16,7 +16,6 @@ import { ChatStreamService } from './chat-stream.service.js';
 describe('ChatConversationsController (HTTP)', () => {
   let app: INestApplication;
   let conversationsService: {
-    create: ReturnType<typeof vi.fn>;
     list: ReturnType<typeof vi.fn>;
     getById: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
@@ -26,8 +25,10 @@ describe('ChatConversationsController (HTTP)', () => {
   let authUser: { userId: string; email: string } | null;
 
   const conversationId = 'bbbbbbbb-bbbb-4222-8222-bbbbbbbbbbbb';
+  const botId = 'aaaaaaaa-aaaa-4111-8111-aaaaaaaaaaaa';
   const conversation = {
     id: conversationId,
+    botId,
     title: '新对话',
     createdAt: '2026-10-10T00:00:00.000Z',
     updatedAt: '2026-10-10T00:00:00.000Z',
@@ -39,7 +40,6 @@ describe('ChatConversationsController (HTTP)', () => {
       email: 'u@example.com',
     };
     conversationsService = {
-      create: vi.fn().mockResolvedValue(conversation),
       list: vi.fn().mockResolvedValue([conversation]),
       getById: vi.fn().mockResolvedValue(conversation),
       update: vi.fn().mockResolvedValue(conversation),
@@ -91,21 +91,26 @@ describe('ChatConversationsController (HTTP)', () => {
     await app.close();
   });
 
-  it('POST /chat/conversations creates conversation', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/chat/conversations')
-      .send({ title: '测试' })
-      .expect(201);
-
-    expect(res.body).toMatchObject({ code: 200, data: conversation });
-    expect(conversationsService.create).toHaveBeenCalled();
-  });
-
   it('GET /chat/conversations lists conversations', async () => {
     const res = await request(app.getHttpServer())
       .get('/chat/conversations')
       .expect(200);
     expect(res.body.data).toEqual([conversation]);
+    expect(conversationsService.list).toHaveBeenCalledWith(
+      '11111111-1111-4111-8111-111111111111',
+      undefined,
+    );
+  });
+
+  it('GET /chat/conversations?botId= filters by bot', async () => {
+    await request(app.getHttpServer())
+      .get('/chat/conversations')
+      .query({ botId })
+      .expect(200);
+    expect(conversationsService.list).toHaveBeenCalledWith(
+      '11111111-1111-4111-8111-111111111111',
+      botId,
+    );
   });
 
   it('GET /chat/conversations/:id returns 404 cross-user', async () => {
