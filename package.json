@@ -45,7 +45,7 @@
     "@nestjs/terminus": "^12.0.0",
     "@nestjs/throttler": "^6.7.1",
     "@prisma/client": "^6.19.3",
-    "@sentry/nestjs": "^11.5.0",
+    "@sentry/nestjs": "^11.7.0",
     "bcrypt": "^6.0.0",
     "bullmq": "^6.3.11",
     "class-transformer": "^0.5.1",
