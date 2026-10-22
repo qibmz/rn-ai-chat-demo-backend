@@ -286,28 +286,30 @@ type WebSource = {
 
 ## 模块切分
 
-| 模块                      | 职责                                                     |
-| ------------------------- | -------------------------------------------------------- |
-| `DeepSeekToolsClient`     | origin、HTTP、重试、abortSignal                          |
-| `createWebTools`          | tools、白名单、原子计数、写队列、计费累计                |
-| `ChatStreamService`       | `isStepCount`、历史 reasoning、落库硬约束、abort persist |
-| `ChatBillingService`      | `computeWebToolsCostMicros`                              |
-| 配置 / Messages DTO / e2e | env 三件套、`sources`、流式契约                          |
+| 模块                      | 职责                                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------------------- |
+| `DeepSeekToolsClient`     | origin、HTTP、重试、abortSignal                                                           |
+| `createWebTools`          | tools、白名单、原子计数、写队列、计费累计                                                 |
+| `ChatStreamService`       | `isStepCount`、历史 reasoning、落库硬约束、abort persist                                  |
+| `ChatBillingService`      | `computeWebToolsCostMicros`                                                               |
+| 配置 / Messages DTO / e2e | env 三件套、`sources`、流式契约；Client + ModelFactory 为 Nest provider 以便 e2e override |
+| `ChatModelFactory`        | 薄封装 `createLanguageModel`；e2e/单测可替换假模型                                        |
 
 ---
 
 ## 测试计划（最低）
 
-1. Client：成功/空/4xx/429；**base 带 `/v1` 不双拼**
-2. tools：上限；非白名单拒；**用户消息 URL 可 fetch**；成功计费；并发不超限
+1. Client：成功/空/4xx/429；**base 带 `/v1` 不双拼**；abortSignal 透传
+2. tools：上限；非白名单拒（中文 `{ error }`）；**用户消息 URL 可 fetch**；成功计费；截断 + `<untrusted_web_content>`；并发不超限
 3. stream：三 data part；写队列不乱序
 4. **多步最终有正文**；落库文本非 final-step-only
-5. 历史**有** CoT + tools：发出 messages 含 reasoning part
-6. 历史**无** CoT（`null`）+ tools：断言 `reasoning_content` 存在且 `""`；**真网 Key 确认不 400**（失败则阻塞始终挂 tools）
-7. abort：web 费用仍入账
+5. 历史**有** CoT + tools：发出 messages 含 reasoning part（限额内）；超限额不带全文
+6. 历史**无** CoT（`null`）+ tools：**分层断言**——（a）`buildModelMessages` 不捏造 reasoning part；（b）`deepseek-provider.replay.spec.ts` 捕获请求体断言 `reasoning_content === ""`；（c）**真网 Key** 确认不 400（失败则阻塞始终挂 tools）
+7. abort **与正常完成**：web 费用仍入账
 8. billing / quota
-9. e2e mock：200 且有文本
+9. e2e：override `ChatModelFactory`（假 LanguageModel 产出 text-delta）+ `DeepSeekToolsClient` → **200 且有文本**（不可只 mock tools；假 `LLM_BASE_URL` 不会自己出字）
 10. `env.validation`：非法 `LLM_BASE_URL` 启动失败
+11. Messages DTO：`sources` 返回；金额/count 不外泄
 
 ---
 
