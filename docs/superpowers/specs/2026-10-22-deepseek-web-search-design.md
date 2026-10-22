@@ -67,26 +67,115 @@
 
 ---
 
-## 工具契约
+## 官方 API 类型（准确 Schema）
+
+> 来源：[Search](https://api-docs.deepseek.com/zh-cn/api/search/) · [Fetch](https://api-docs.deepseek.com/zh-cn/api/fetch/) · [指南](https://api-docs.deepseek.com/zh-cn/guides/search/)  
+> 字段名为 **snake_case**。Base URL：`https://api.deepseek.com`。鉴权：`Authorization: Bearer <API Key>`。
+
+### Search — `POST /v1/tools/search`
+
+**Request body**
+
+| 字段           | 类型             | 必填 | 默认     | 约束 / 说明                                                                                        |
+| -------------- | ---------------- | ---- | -------- | -------------------------------------------------------------------------------------------------- |
+| `query`        | `string`         | 是   | —        | 非空，≤128 Unicode，不能全空白；支持 `site:` / `-site:` / 引号 / `lang:` / `after:` / `before:` 等 |
+| `count`        | `integer`        | 否   | **`10`** | 1～**50**                                                                                          |
+| `ori_question` | `string \| null` | 否   | —        | 非空时 1～128；传 `null` 视为未提供                                                                |
+| `localization` | `string`         | 否   | `""`     | 用于本地化的 **IP 地址**                                                                           |
+| `need_content` | `boolean`        | 否   | `false`  | 为 `false` 时结果里 `content` 恒为 `""`                                                            |
+
+未知字段会被忽略。
+
+**Response body（HTTP 200）**
+
+```ts
+/** 官方 Search 成功响应 */
+type DeepSeekSearchResponse = {
+  results: DeepSeekSearchResult[]; // 无匹配时为 []
+};
+
+type DeepSeekSearchResult = {
+  /** 排序分 0～3；≥1.5 为优质 */
+  rerank_score: number;
+  title: string;
+  url: string;
+  /** 短摘要，约 100～200 字符，偏 UI */
+  snippet: string;
+  /** 长摘要，约 600～800 字符，偏给模型读 */
+  summary: string;
+  /** need_content=false 或正文缺失时为 "" */
+  content: string;
+  site_name: string | null;
+  site_icon: string | null;
+  /** UTC RFC 3339；未知为 null */
+  date: string | null;
+  /** -1～4；≥3 极权威；-1 未知 */
+  authority: number;
+};
+```
+
+### Fetch — `POST /v1/tools/fetch`
+
+**Request body**
+
+| 字段  | 类型     | 必填 | 约束 / 说明                                                    |
+| ----- | -------- | ---- | -------------------------------------------------------------- |
+| `url` | `string` | 是   | ≤8192；含 host 的 `http`/`https`；**不能**带 username/password |
+
+**Response body（HTTP 200）**
+
+```ts
+/** 官方 Fetch 成功响应 */
+type DeepSeekFetchResponse = {
+  /** 缺失时为 "" */
+  title: string;
+  /** Markdown 正文 */
+  content: string;
+};
+```
+
+### 错误与计费（官方）
+
+错误体为 OpenAI 兼容格式：`{ error: { message, type, param: null, code } }`。
+
+| HTTP      | 说明                                                    |
+| --------- | ------------------------------------------------------- |
+| 400       | 请求不合法                                              |
+| 401       | Key 无效                                                |
+| 402       | 余额不足                                                |
+| 403       | Fetch 被安全策略拒绝                                    |
+| 404       | Fetch 拿不到可用正文（URL/策略/类型/无可提取 Markdown） |
+| 408 / 413 | 读 body 超时 / 过大                                     |
+| 429       | Search 或 Fetch QPS（账号级；Fetch 另有域名级）         |
+| 500 / 504 | 服务端 / 下游超时                                       |
+
+计费：Search、Fetch 各 **¥5 / 1000 次成功请求**。仅 HTTP 200 且「有结果」才计费（Search：`results` 非空；Fetch：有网页正文）。失败、空结果、超时不计费。QPS：Search 100、Fetch 25（账号级，互相独立）。
+
+---
+
+## 工具契约（本产品封装）
+
+在官方 Schema 之上，用 AI SDK `tool()` 暴露给模型的名称：`web_search` / `web_fetch`。HTTP 客户端与官方字段一一对应（snake_case）。
 
 ### `web_search`
 
-| 项           | 说明                                                                                                 |
-| ------------ | ---------------------------------------------------------------------------------------------------- |
-| 官方         | `POST {LLM_BASE_URL}/v1/tools/search`                                                                |
-| 入参         | `query` string 必填（1～128 字符）；`count` optional int，默认 **5**，服务端硬顶 **≤10**             |
-| 请求体       | `{ query, count, ori_question?: 用户原问截断, need_content: false }`                                 |
-| 成功回传模型 | `results[]`：`title/url/snippet/summary/rerank_score/authority/site_name/date`（可省略空 `content`） |
-| 计费条件     | HTTP 200 且 `results.length > 0` → +`CHAT_PRICE_WEB_SEARCH_MICROS`                                   |
+| 项           | 说明                                                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 官方         | `POST {LLM_BASE_URL}/v1/tools/search`                                                                                                             |
+| 模型入参     | `query` 必填；`count` 可选                                                                                                                        |
+| 请求体映射   | `{ query, count, ori_question?: 用户原问截断至 ≤128, need_content: false }`；本轮默认不传 `localization`                                          |
+| `count` 策略 | 未传时用配置默认值（对齐官网默认 **10**）；传入后 clamp 到 `1..min(50, CHAT_WEB_SEARCH_COUNT_CAP)`，产品硬顶默认 **≤10**（小于官网 50，控上下文） |
+| 成功回传模型 | 完整 `DeepSeekSearchResponse`（或精简掉空 `content`）；优先让模型读 `summary`，UI 用来源时用 `snippet`                                            |
+| 计费条件     | HTTP 200 且 `results.length > 0` → +`CHAT_PRICE_WEB_SEARCH_MICROS`                                                                                |
 
 ### `web_fetch`
 
-| 项           | 说明                                                                               |
-| ------------ | ---------------------------------------------------------------------------------- |
-| 官方         | `POST {LLM_BASE_URL}/v1/tools/fetch`                                               |
-| 入参         | `url` string 必填（http/https，含 host，无 userinfo，≤8192）                       |
-| 成功回传模型 | `{ title, content }`；`content` 为 Markdown，**截断上限默认 30000 字符**（可配置） |
-| 计费条件     | HTTP 200 且 `content` 非空 → +`CHAT_PRICE_WEB_FETCH_MICROS`                        |
+| 项           | 说明                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------ |
+| 官方         | `POST {LLM_BASE_URL}/v1/tools/fetch`                                                       |
+| 模型入参     | `url` 必填（校验 http/https、有 host、无 userinfo、≤8192）                                 |
+| 成功回传模型 | `DeepSeekFetchResponse`；`content` 在入模前按 `CHAT_WEB_FETCH_MAX_CHARS`（默认 30000）截断 |
+| 计费条件     | HTTP 200 且 `content` 非空 → +`CHAT_PRICE_WEB_FETCH_MICROS`                                |
 
 ### 上限与错误
 
@@ -151,14 +240,15 @@ type WebSource = {
 
 ### 单价（官方 ¥5 / 1000 次成功请求）
 
-| 环境变量                        | 默认    | 含义                     |
-| ------------------------------- | ------- | ------------------------ |
-| `CHAT_PRICE_WEB_SEARCH_MICROS`  | `5000`  | 一次成功 Search = ¥0.005 |
-| `CHAT_PRICE_WEB_FETCH_MICROS`   | `5000`  | 一次成功 Fetch = ¥0.005  |
-| `CHAT_WEB_FETCH_MAX_CHARS`      | `30000` | fetch 正文截断           |
-| `CHAT_WEB_SEARCH_DEFAULT_COUNT` | `5`     | search 默认条数          |
-| `CHAT_WEB_SEARCH_MAX_PER_TURN`  | `2`     | 每轮 search 上限         |
-| `CHAT_WEB_FETCH_MAX_PER_TURN`   | `3`     | 每轮 fetch 上限          |
+| 环境变量                        | 默认    | 含义                                        |
+| ------------------------------- | ------- | ------------------------------------------- |
+| `CHAT_PRICE_WEB_SEARCH_MICROS`  | `5000`  | 一次成功 Search = ¥0.005                    |
+| `CHAT_PRICE_WEB_FETCH_MICROS`   | `5000`  | 一次成功 Fetch = ¥0.005                     |
+| `CHAT_WEB_FETCH_MAX_CHARS`      | `30000` | fetch 正文截断（入模前）                    |
+| `CHAT_WEB_SEARCH_DEFAULT_COUNT` | `10`    | search 默认条数（对齐官网）                 |
+| `CHAT_WEB_SEARCH_COUNT_CAP`     | `10`    | 单次 search `count` 产品上限（官网最大 50） |
+| `CHAT_WEB_SEARCH_MAX_PER_TURN`  | `2`     | 每轮 search 调用次数上限                    |
+| `CHAT_WEB_FETCH_MAX_PER_TURN`   | `3`     | 每轮 fetch 调用次数上限                     |
 
 ### 入账路径
 
