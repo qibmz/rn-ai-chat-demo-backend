@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ChatAttachmentsService } from './chat-attachments.service.js';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto.js';
+import type { WebSource } from './llm/create-web-tools.js';
 
 type RawPart = {
   type?: string;
@@ -26,6 +27,7 @@ export type MessageDto = {
   role: string;
   content: string;
   parts: EnrichedPart[];
+  sources: WebSource[] | null;
   createdAt: string;
 };
 
@@ -131,6 +133,7 @@ export class ChatMessagesService {
       role: m.role,
       content: m.content,
       parts: this.enrichParts(m.parts as RawPart[], presignMap),
+      sources: (m.sources as WebSource[] | null) ?? null,
       createdAt: m.createdAt.toISOString(),
     }));
 
