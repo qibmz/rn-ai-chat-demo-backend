@@ -230,6 +230,7 @@ Bot 与 Conversation **严格 1:1**：创建子 Bot 会同时创建唯一会话�
           "url": "https://...presigned..."
         }
       ],
+      "sources": null,
       "createdAt": "ISO"
     }
   ],
@@ -242,6 +243,18 @@ Bot 与 Conversation **严格 1:1**：创建子 Bot 会同时创建唯一会话�
 - `items` 按时间升序（旧 → 新）。
 - **当前不返回** `reasoningContent`（思考过程库内有，列表接口未暴露；流式时思考走 UI Message Stream 的 reasoning 部分）。
 - 图片 `url` 为临时现签，过期后需重新拉列表或调附件接口。
+- **`sources`**：`WebSource[] | null`。用户消息、以及本轮没有联网来源的助手消息为 `null`。有来源时为数组，字段见下表。**不返回** `webSearchCount`、`webFetchCount`、`webToolsCostMicros`、`costMicros`。
+- 助手**正文**仍是 `content` / `parts` 里的 `text`，按 **Markdown** 渲染。`sources` 只是引用列表，不要把它当成正文。
+
+`sources[]` 单项：
+
+| 字段       | 类型           | 说明                                     |
+| ---------- | -------------- | ---------------------------------------- |
+| `title`    | string         | 标题                                     |
+| `url`      | string         | 链接                                     |
+| `snippet`  | string         | 摘要；搜索命中时有值，仅抓取时可能为空串 |
+| `siteName` | string \| null | 可选，站点名                             |
+| `fetched`  | boolean        | 可选；成功抓取后为 `true`                |
 
 ---
 
@@ -289,7 +302,27 @@ Bot 与 Conversation **严格 1:1**：创建子 Bot 会同时创建唯一会话�
 
 - 早期会有自定义 data：`data-chatMeta`，大致包含 `userMessageId`、`assistantMessageId`、`quota`
 - 随后为 UI Message 文本 / reasoning 增量
+- 联网时还会出现下面的过程 / 来源 data parts（`useChat` 消息 parts，类型即 `data-*`）
 - 中途异常：可能收到 `data: {"type":"error","errorText":"..."}`（headers 已发出时）
+
+请求体**没有**新的联网字段。模型自行决定是否调用搜索 / 抓取。
+
+### 联网过程与来源（data parts）
+
+这些 part 是过程态和引用，**不是**回答正文。正文仍是 text part，按 **Markdown** 渲染。
+
+| type              | 何时出现                         | `data`                                             |
+| ----------------- | -------------------------------- | -------------------------------------------------- |
+| `data-webSearch`  | 搜索开始 / 结束 / 失败           | `{ status, query, errorText? }`                    |
+| `data-webFetch`   | 抓取开始 / 结束 / 失败           | `{ status, url, title?, errorText? }`              |
+| `data-webSources` | 成功搜索或成功抓取后**整表重写** | `{ sources: WebSource[] }`（字段同历史 `sources`） |
+
+`status`：
+
+- `data-webSearch`：`searching` → `done`，失败为 `error`（带中文 `errorText`）
+- `data-webFetch`：`fetching` → `done`（`done` 带 `title`），失败为 `error`（带中文 `errorText`）
+
+来源以**最新一条** `data-webSources` 为准（成功后会再发一版完整列表，不要把多次 part 拼接）。流结束后刷新历史，用消息上的 `sources`（无来源为 `null`）。没有 `data-webSources` 收尾包的保证，断线后以历史接口为准。
 
 ### RN / Expo 示例
 
@@ -376,5 +409,7 @@ await sendMessage({ text: '你好' });
 - [ ] UI 展示名用 `Bot.name`，编辑走 `PATCH /bots/:id`
 - [ ] 图片：上传 → `attachmentIds` → stream；storage=disabled 时跳过上传
 - [ ] 额度 UI：`usedPercent` + `resetsAt`
-- [ ] 历史页：当前无思考字段，勿依赖 `reasoningContent`
+- [ ] 历史页：当前无思考字段，勿依赖 `reasoningContent`；引用来 `sources`（可能为 `null`）
+- [ ] 流式过程态看 `data-webSearch` / `data-webFetch`；来源看最新 `data-webSources`，落库后看历史 `sources`
+- [ ] 回答正文只渲染 text → Markdown，不要把 data parts 或 `sources` 当正文
 - [ ] 后端与前端同批上线（移除旧创建会话接口）
