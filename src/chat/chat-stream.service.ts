@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { MessageRole, Prisma } from '@prisma/client';
 import {
   createUIMessageStream,
+  isStepCount,
   pipeUIMessageStreamToResponse,
   streamText,
   toUIMessageStream,
@@ -22,7 +23,14 @@ import { RedisService } from '../redis/redis.service.js';
 import { ChatAttachmentsService } from './chat-attachments.service.js';
 import { ChatBillingService } from './chat-billing.service.js';
 import { StreamMessagesDto } from './dto/stream-messages.dto.js';
-import { createLanguageModel } from './llm/create-language-model.js';
+import { ChatModelFactory } from './llm/chat-model.factory.js';
+import {
+  createWebTools,
+  type WebSource,
+  type WebToolsConfig,
+  type WebToolsSession,
+} from './llm/create-web-tools.js';
+import { DeepSeekToolsClient } from './llm/deepseek-tools.client.js';
 import { extractUiMessageText } from './llm/extract-ui-message-text.js';
 import {
   mapLanguageModelUsage,
@@ -38,6 +46,7 @@ type DbMessage = {
   role: MessageRole;
   content: string;
   parts: Prisma.JsonValue;
+  reasoningContent?: string | null;
   createdAt: Date;
 };
 
@@ -49,6 +58,8 @@ export class ChatStreamService {
     private readonly configService: ConfigService,
     private readonly attachments: ChatAttachmentsService,
     private readonly billing: ChatBillingService,
+    private readonly modelFactory: ChatModelFactory,
+    private readonly toolsClient: DeepSeekToolsClient,
   ) {}
 
   async stream(
@@ -158,19 +169,21 @@ export class ChatStreamService {
       const modelId = this.configService.getOrThrow<string>('LLM_MODEL');
       const provider =
         this.configService.get<string>('LLM_PROVIDER')?.trim() || 'deepseek';
-      const maxOutputTokens = Number(
-        this.configService.get('CHAT_MAX_TOKENS', '4096'),
-      );
-
-      const model = createLanguageModel({
-        provider,
-        apiKey,
-        baseURL,
-        modelId,
-      });
+      const maxSteps = this.readNumber('CHAT_WEB_TOOL_MAX_STEPS', '8');
+      const stepMaxTokens = this.readNumber('CHAT_WEB_STEP_MAX_TOKENS', '2048');
 
       let lastUsage: LanguageModelUsage | undefined;
       let persisted = false;
+      let session: WebToolsSession | undefined;
+      const pending: {
+        text: string;
+        reasoningText: string | null;
+        finishReason: string | null;
+      } = {
+        text: '',
+        reasoningText: null,
+        finishReason: null,
+      };
 
       const persistOnce = async (args: {
         text: string;
@@ -180,9 +193,16 @@ export class ChatStreamService {
         if (persisted) {
           return;
         }
-        persisted = true;
-        const mapped = mapLanguageModelUsage(lastUsage);
-        await this.persistAssistantMessage({
+        const webSearchCount = session?.billableSearchCount ?? 0;
+        const webFetchCount = session?.billableFetchCount ?? 0;
+        const webToolsCostMicros = this.billing.computeWebToolsCostMicros(
+          webSearchCount,
+          webFetchCount,
+        );
+        const sources = (session?.sources ?? []).map((source) => ({
+          ...source,
+        }));
+        const costMicros = await this.persistAssistantMessage({
           assistantMessageId,
           conversationId,
           text: args.text,
@@ -190,9 +210,15 @@ export class ChatStreamService {
           thinking,
           reasoningEffort: thinking ? reasoningEffort : null,
           finishReason: args.finishReason,
-          usage: mapped,
+          usage: mapLanguageModelUsage(lastUsage),
           userId,
+          webSearchCount,
+          webFetchCount,
+          webToolsCostMicros,
+          sources,
         });
+        persisted = true;
+        await this.billing.recordSpend(userId, costMicros);
       };
 
       try {
@@ -207,10 +233,31 @@ export class ChatStreamService {
               },
             });
 
+            const created = createWebTools({
+              client: this.toolsClient,
+              writer: {
+                write: (part) => {
+                  writer.write(part as Parameters<typeof writer.write>[0]);
+                },
+              },
+              userText,
+              oriQuestion: userText,
+              config: this.webToolsConfig(),
+            });
+            session = created.session;
+            const { tools } = created;
+
             const result = streamText({
-              model,
+              model: this.modelFactory.create({
+                provider,
+                apiKey,
+                baseURL,
+                modelId,
+              }),
               messages: modelMessages,
-              maxOutputTokens,
+              tools,
+              stopWhen: isStepCount(maxSteps),
+              maxOutputTokens: stepMaxTokens,
               abortSignal: abortController.signal,
               providerOptions: {
                 deepseek: {
@@ -229,6 +276,7 @@ export class ChatStreamService {
             writer.merge(
               toUIMessageStream({
                 stream: result.stream,
+                tools,
                 sendReasoning: thinking,
                 generateMessageId: () => assistantMessageId,
                 onError: (error) =>
@@ -237,12 +285,14 @@ export class ChatStreamService {
             );
           },
           onEnd: async ({ isAborted, responseMessage }) => {
-            const { text, reasoningText } =
-              extractUiMessageText(responseMessage);
+            const extracted = extractUiMessageText(responseMessage);
+            pending.text = extracted.text;
+            pending.reasoningText = extracted.reasoningText;
+            pending.finishReason = isAborted ? 'aborted' : 'stop';
             await persistOnce({
-              text,
-              reasoningText,
-              finishReason: isAborted ? 'aborted' : 'stop',
+              text: pending.text,
+              reasoningText: pending.reasoningText,
+              finishReason: pending.finishReason,
             });
           },
           onError: (error) =>
@@ -258,6 +308,18 @@ export class ChatStreamService {
           },
         });
       } finally {
+        const hasBillableWeb =
+          (session?.billableSearchCount ?? 0) > 0 ||
+          (session?.billableFetchCount ?? 0) > 0;
+        const hasText =
+          pending.text.length > 0 || (pending.reasoningText?.length ?? 0) > 0;
+        if (!persisted && (hasBillableWeb || hasText)) {
+          await persistOnce({
+            text: pending.text,
+            reasoningText: pending.reasoningText,
+            finishReason: pending.finishReason ?? 'aborted',
+          });
+        }
         res.off('close', onClose);
       }
     } finally {
@@ -445,13 +507,32 @@ export class ChatStreamService {
       messages.push({ role: 'system', content: systemPrompt });
     }
 
+    const includeReasoning = this.recentReasoningIds(selected);
+
     for (const msg of selected) {
       if (msg.role === MessageRole.system) {
         messages.push({ role: 'system', content: msg.content });
         continue;
       }
       if (msg.role === MessageRole.assistant) {
-        // Visible content only — never attach historical reasoningContent.
+        const reasoning = msg.reasoningContent;
+        if (includeReasoning.has(msg.id) && this.hasReasoning(reasoning)) {
+          const maxChars = this.readNumber(
+            'CHAT_WEB_REASONING_MAX_CHARS',
+            '4000',
+          );
+          const truncated = this.truncateCodepoints(reasoning, maxChars);
+          if (truncated.length > 0) {
+            messages.push({
+              role: 'assistant',
+              content: [
+                { type: 'reasoning', text: truncated },
+                { type: 'text', text: msg.content },
+              ],
+            });
+            continue;
+          }
+        }
         messages.push({ role: 'assistant', content: msg.content });
         continue;
       }
@@ -550,9 +631,14 @@ export class ChatStreamService {
     finishReason: string | null;
     usage: MappedLlmUsage;
     userId: string;
-  }): Promise<void> {
+    webSearchCount: number;
+    webFetchCount: number;
+    webToolsCostMicros: bigint;
+    sources: WebSource[];
+  }): Promise<bigint> {
     const billed = args.usage;
-    const costMicros = this.billing.computeCostMicros(billed);
+    const tokenCost = this.billing.computeCostMicros(billed);
+    const costMicros = tokenCost + args.webToolsCostMicros;
     const priceVersion = this.billing.getPriceVersion();
 
     await this.prisma.$transaction(async (tx) => {
@@ -577,6 +663,13 @@ export class ChatStreamService {
           reasoningTokens: billed.reasoningTokens ?? 0,
           costMicros,
           priceVersion,
+          sources:
+            args.sources.length > 0
+              ? (args.sources as unknown as Prisma.InputJsonValue)
+              : Prisma.JsonNull,
+          webSearchCount: args.webSearchCount,
+          webFetchCount: args.webFetchCount,
+          webToolsCostMicros: args.webToolsCostMicros,
         },
       });
       await tx.conversation.update({
@@ -586,6 +679,55 @@ export class ChatStreamService {
       await this.billing.incrementWeeklySpend(tx, args.userId, costMicros);
     });
 
-    await this.billing.recordSpend(args.userId, costMicros);
+    return costMicros;
+  }
+
+  private readNumber(key: string, fallback: string): number {
+    const raw = this.configService.get(key, fallback);
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : Number(fallback);
+  }
+
+  private webToolsConfig(): WebToolsConfig {
+    return {
+      searchMaxPerTurn: this.readNumber('CHAT_WEB_SEARCH_MAX_PER_TURN', '2'),
+      fetchMaxPerTurn: this.readNumber('CHAT_WEB_FETCH_MAX_PER_TURN', '3'),
+      searchDefaultCount: this.readNumber(
+        'CHAT_WEB_SEARCH_DEFAULT_COUNT',
+        '10',
+      ),
+      searchCountCap: this.readNumber('CHAT_WEB_SEARCH_COUNT_CAP', '10'),
+      fetchMaxChars: this.readNumber('CHAT_WEB_FETCH_MAX_CHARS', '8000'),
+    };
+  }
+
+  private hasReasoning(value: string | null | undefined): value is string {
+    return typeof value === 'string' && value.length > 0;
+  }
+
+  private truncateCodepoints(text: string, max: number): string {
+    if (max <= 0) {
+      return '';
+    }
+    return Array.from(text).slice(0, max).join('');
+  }
+
+  /** Most recent N assistant turns that actually contain CoT. */
+  private recentReasoningIds(selected: DbMessage[]): Set<string> {
+    const turns = this.readNumber('CHAT_WEB_REASONING_HISTORY_TURNS', '4');
+    const ids = new Set<string>();
+    let remaining = turns;
+    for (let i = selected.length - 1; i >= 0 && remaining > 0; i -= 1) {
+      const msg = selected[i]!;
+      if (msg.role !== MessageRole.assistant) {
+        continue;
+      }
+      if (!this.hasReasoning(msg.reasoningContent)) {
+        continue;
+      }
+      ids.add(msg.id);
+      remaining -= 1;
+    }
+    return ids;
   }
 }
