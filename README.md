@@ -36,11 +36,10 @@ NestJS 12：Prisma + PostgreSQL、Redis、BullMQ、JWT、Winston、Swagger、Git
 
 ```bash
 cp .env.example .env
-docker compose up -d          # Postgres + Redis
 pnpm install
 pnpm exec prisma migrate deploy
 pnpm run prisma:seed
-pnpm run start:dev
+pnpm run start:dev            # 会先 docker compose up -d --wait（Postgres + Redis）
 ```
 
 |         | URL                            |
@@ -227,17 +226,17 @@ Error:
 
 ## Scripts
 
-| 命令                                          | 说明                             |
-| --------------------------------------------- | -------------------------------- |
-| `npm run start:dev`                           | 开发热重载                       |
-| `npm run start:prod`                          | 生产（含 Sentry ESM `--import`） |
-| `npm run build`                               | 编译                             |
-| `npm run lint` / `format:check` / `typecheck` | 质量检查                         |
-| `npm test` / `test:e2e`                       | 单测 / e2e                       |
-| `npm run docker:up` / `docker:down`           | 起停 Postgres + Redis            |
-| `npm run prisma:migrate`                      | 本地迁移开发                     |
-| `npm run prisma:deploy`                       | 应用已有迁移                     |
-| `npm run prisma:seed`                         | 幂等写入演示用户                 |
+| 命令                                          | 说明                                           |
+| --------------------------------------------- | ---------------------------------------------- |
+| `npm run start` / `start:dev` / `start:debug` | 先起 Docker 依赖再启动 Nest（`--wait` 等健康） |
+| `npm run start:prod`                          | 生产（不含 Docker；含 Sentry ESM `--import`）  |
+| `npm run build`                               | 编译                                           |
+| `npm run lint` / `format:check` / `typecheck` | 质量检查                                       |
+| `npm test` / `test:e2e`                       | 单测 / e2e                                     |
+| `npm run docker:up` / `docker:down`           | 单独起停 Postgres + Redis                      |
+| `npm run prisma:migrate`                      | 本地迁移开发                                   |
+| `npm run prisma:deploy`                       | 应用已有迁移                                   |
+| `npm run prisma:seed`                         | 幂等写入演示用户                               |
 
 ## License
 
