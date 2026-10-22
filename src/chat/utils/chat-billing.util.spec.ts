@@ -1,4 +1,7 @@
-import { computeCostMicros } from './chat-billing.util.js';
+import {
+  computeCostMicros,
+  computeWebToolsCostMicros,
+} from './chat-billing.util.js';
 
 describe('computeCostMicros', () => {
   const prices = {
@@ -42,5 +45,19 @@ describe('computeCostMicros', () => {
       prices,
     );
     expect(cost).toBe(prices.inputMiss + prices.inputHit + prices.output);
+  });
+});
+
+describe('computeWebToolsCostMicros', () => {
+  const prices = { search: 5000n, fetch: 5000n };
+
+  it('bills search and fetch counts at per-call micro prices', () => {
+    expect(computeWebToolsCostMicros(2, 1, prices)).toBe(15000n);
+    expect(computeWebToolsCostMicros(0, 0, prices)).toBe(0n);
+  });
+
+  it('clamps negative counts to zero', () => {
+    expect(computeWebToolsCostMicros(-1, 2, prices)).toBe(10000n);
+    expect(computeWebToolsCostMicros(1, -3, prices)).toBe(5000n);
   });
 });

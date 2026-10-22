@@ -41,6 +41,23 @@ export function computeCostMicros(
   );
 }
 
+export type WebToolPriceMicros = {
+  search: bigint;
+  fetch: bigint;
+};
+
+/** Per-call web tool cost in 微元 (CNY × 1e6). */
+export function computeWebToolsCostMicros(
+  searchCount: number,
+  fetchCount: number,
+  prices: WebToolPriceMicros,
+): bigint {
+  return (
+    BigInt(Math.max(0, searchCount)) * prices.search +
+    BigInt(Math.max(0, fetchCount)) * prices.fetch
+  );
+}
+
 export function streamLockRedisKey(userId: string): string {
   return `chat:streams:${userId}`;
 }

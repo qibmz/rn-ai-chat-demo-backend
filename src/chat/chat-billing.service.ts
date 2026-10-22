@@ -7,6 +7,8 @@ import {
   ChatPriceMicrosPerMTokens,
   ChatUsageForBilling,
   computeCostMicros,
+  computeWebToolsCostMicros,
+  WebToolPriceMicros,
 } from './utils/chat-billing.util.js';
 import { getShanghaiWeekInfo, spendRedisKey } from './utils/week-quota.util.js';
 
@@ -63,6 +65,25 @@ export class ChatBillingService {
 
   computeCostMicros(usage: ChatUsageForBilling): bigint {
     return computeCostMicros(usage, this.getPrices());
+  }
+
+  getWebToolPrices(): WebToolPriceMicros {
+    return {
+      search: BigInt(
+        this.configService.get('CHAT_PRICE_WEB_SEARCH_MICROS', '5000'),
+      ),
+      fetch: BigInt(
+        this.configService.get('CHAT_PRICE_WEB_FETCH_MICROS', '5000'),
+      ),
+    };
+  }
+
+  computeWebToolsCostMicros(searchCount: number, fetchCount: number): bigint {
+    return computeWebToolsCostMicros(
+      searchCount,
+      fetchCount,
+      this.getWebToolPrices(),
+    );
   }
 
   /**
