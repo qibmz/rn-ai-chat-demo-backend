@@ -56,6 +56,19 @@ function requireApiKey(env: Record<string, unknown>, key: string): string {
   return value;
 }
 
+function requireHttpUrl(env: Record<string, unknown>, key: string): void {
+  const value = requireString(env, key, 8);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`环境变量 ${key} 必须是合法 URL`);
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`环境变量 ${key} 必须是 http(s) URL`);
+  }
+}
+
 function optionalDuration(env: Record<string, unknown>, key: string): void {
   const value = env[key];
   if (value === undefined || value === '') {
@@ -115,7 +128,7 @@ export function validateEnv(env: Record<string, unknown>) {
   requireJwtSecret(env, 'JWT_ACCESS_SECRET');
   requireJwtSecret(env, 'JWT_REFRESH_SECRET');
   requireApiKey(env, 'LLM_API_KEY');
-  requireString(env, 'LLM_BASE_URL', 8);
+  requireHttpUrl(env, 'LLM_BASE_URL');
   requireString(env, 'LLM_MODEL', 1);
 
   optionalDuration(env, 'JWT_ACCESS_EXPIRES_IN');
@@ -144,6 +157,18 @@ export function validateEnv(env: Record<string, unknown>) {
   optionalNonNegativeInt(env, 'CHAT_PRICE_INPUT_MISS_MICROS_PER_MTOKENS');
   optionalNonNegativeInt(env, 'CHAT_PRICE_INPUT_HIT_MICROS_PER_MTOKENS');
   optionalNonNegativeInt(env, 'CHAT_PRICE_OUTPUT_MICROS_PER_MTOKENS');
+  optionalNonNegativeInt(env, 'CHAT_PRICE_WEB_SEARCH_MICROS');
+  optionalNonNegativeInt(env, 'CHAT_PRICE_WEB_FETCH_MICROS');
+
+  optionalPositiveInt(env, 'CHAT_WEB_FETCH_MAX_CHARS');
+  optionalPositiveInt(env, 'CHAT_WEB_SEARCH_DEFAULT_COUNT');
+  optionalPositiveInt(env, 'CHAT_WEB_SEARCH_COUNT_CAP');
+  optionalPositiveInt(env, 'CHAT_WEB_SEARCH_MAX_PER_TURN');
+  optionalPositiveInt(env, 'CHAT_WEB_FETCH_MAX_PER_TURN');
+  optionalPositiveInt(env, 'CHAT_WEB_TOOL_MAX_STEPS');
+  optionalPositiveInt(env, 'CHAT_WEB_REASONING_HISTORY_TURNS');
+  optionalPositiveInt(env, 'CHAT_WEB_REASONING_MAX_CHARS');
+  optionalPositiveInt(env, 'CHAT_WEB_STEP_MAX_TOKENS');
 
   optionalEnum(env, 'LLM_PROVIDER', LLM_PROVIDERS);
   optionalEnum(env, 'CHAT_ATTACHMENT_STORAGE', ['r2', 'disabled'] as const);

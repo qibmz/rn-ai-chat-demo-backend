@@ -80,6 +80,24 @@ describe('validateEnv', () => {
     );
   });
 
+  it('rejects non-URL LLM_BASE_URL', () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        LLM_BASE_URL: 'not-a-url',
+      }),
+    ).toThrow(/LLM_BASE_URL/);
+  });
+
+  it('rejects non-http(s) LLM_BASE_URL', () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        LLM_BASE_URL: 'ftp://example.com',
+      }),
+    ).toThrow(/LLM_BASE_URL/);
+  });
+
   it('rejects missing LLM_MODEL', () => {
     const { LLM_MODEL: _, ...without } = base;
     expect(() => validateEnv(without)).toThrow(/LLM_MODEL/);
