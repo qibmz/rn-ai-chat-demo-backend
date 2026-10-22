@@ -174,6 +174,8 @@ export class ChatStreamService {
 
       let lastUsage: LanguageModelUsage | undefined;
       let persisted = false;
+      let onEndStarted = false;
+      let persistFlight: Promise<void> | null = null;
       let session: WebToolsSession | undefined;
       const pending: {
         text: string;
@@ -185,40 +187,57 @@ export class ChatStreamService {
         finishReason: null,
       };
 
-      const persistOnce = async (args: {
-        text: string;
-        reasoningText: string | null;
-        finishReason: string | null;
-      }) => {
-        if (persisted) {
-          return;
+      const writeOnce = async (): Promise<void> => {
+        try {
+          // onEnd may claim the snapshot in the same turn the fallback entered.
+          await Promise.resolve();
+          if (persisted) {
+            return;
+          }
+          const webSearchCount = session?.billableSearchCount ?? 0;
+          const webFetchCount = session?.billableFetchCount ?? 0;
+          const webToolsCostMicros = this.billing.computeWebToolsCostMicros(
+            webSearchCount,
+            webFetchCount,
+          );
+          const sources = (session?.sources ?? []).map((source) => ({
+            ...source,
+          }));
+          const costMicros = await this.persistAssistantMessage({
+            assistantMessageId,
+            conversationId,
+            text: pending.text,
+            reasoningText: pending.reasoningText,
+            thinking,
+            reasoningEffort: thinking ? reasoningEffort : null,
+            finishReason: pending.finishReason ?? 'aborted',
+            usage: mapLanguageModelUsage(lastUsage),
+            userId,
+            webSearchCount,
+            webFetchCount,
+            webToolsCostMicros,
+            sources,
+          });
+          persisted = true;
+          await this.billing.recordSpend(userId, costMicros);
+        } catch (err) {
+          if (this.isAssistantMessageIdConflict(err)) {
+            persisted = true;
+            return;
+          }
+          persistFlight = null;
+          throw err;
         }
-        const webSearchCount = session?.billableSearchCount ?? 0;
-        const webFetchCount = session?.billableFetchCount ?? 0;
-        const webToolsCostMicros = this.billing.computeWebToolsCostMicros(
-          webSearchCount,
-          webFetchCount,
-        );
-        const sources = (session?.sources ?? []).map((source) => ({
-          ...source,
-        }));
-        const costMicros = await this.persistAssistantMessage({
-          assistantMessageId,
-          conversationId,
-          text: args.text,
-          reasoningText: args.reasoningText,
-          thinking,
-          reasoningEffort: thinking ? reasoningEffort : null,
-          finishReason: args.finishReason,
-          usage: mapLanguageModelUsage(lastUsage),
-          userId,
-          webSearchCount,
-          webFetchCount,
-          webToolsCostMicros,
-          sources,
-        });
-        persisted = true;
-        await this.billing.recordSpend(userId, costMicros);
+      };
+
+      const persistOnce = (): Promise<void> => {
+        if (persisted) {
+          return Promise.resolve();
+        }
+        if (!persistFlight) {
+          persistFlight = writeOnce();
+        }
+        return persistFlight;
       };
 
       try {
@@ -284,16 +303,14 @@ export class ChatStreamService {
               }),
             );
           },
-          onEnd: async ({ isAborted, responseMessage }) => {
+          onEnd: async ({ isAborted, isCancelled, responseMessage }) => {
+            onEndStarted = true;
             const extracted = extractUiMessageText(responseMessage);
             pending.text = extracted.text;
             pending.reasoningText = extracted.reasoningText;
-            pending.finishReason = isAborted ? 'aborted' : 'stop';
-            await persistOnce({
-              text: pending.text,
-              reasoningText: pending.reasoningText,
-              finishReason: pending.finishReason,
-            });
+            pending.finishReason =
+              isAborted || isCancelled ? 'aborted' : 'stop';
+            await persistOnce();
           },
           onError: (error) =>
             error instanceof Error ? error.message : String(error),
@@ -308,17 +325,20 @@ export class ChatStreamService {
           },
         });
       } finally {
-        const hasBillableWeb =
-          (session?.billableSearchCount ?? 0) > 0 ||
-          (session?.billableFetchCount ?? 0) > 0;
-        const hasText =
-          pending.text.length > 0 || (pending.reasoningText?.length ?? 0) > 0;
-        if (!persisted && (hasBillableWeb || hasText)) {
-          await persistOnce({
-            text: pending.text,
-            reasoningText: pending.reasoningText,
-            finishReason: pending.finishReason ?? 'aborted',
-          });
+        if (!onEndStarted) {
+          await Promise.resolve();
+        }
+        if (onEndStarted || persistFlight) {
+          await persistOnce();
+        } else {
+          const hasBillableWeb =
+            (session?.billableSearchCount ?? 0) > 0 ||
+            (session?.billableFetchCount ?? 0) > 0;
+          const hasText =
+            pending.text.length > 0 || (pending.reasoningText?.length ?? 0) > 0;
+          if (!persisted && (hasBillableWeb || hasText)) {
+            await persistOnce();
+          }
         }
         res.off('close', onClose);
       }
@@ -619,6 +639,38 @@ export class ChatStreamService {
       }
     }
     return out;
+  }
+
+  /** P2002 on the assistant message id means the other writer already stored it. */
+  private isAssistantMessageIdConflict(err: unknown): boolean {
+    if (
+      !(err instanceof Prisma.PrismaClientKnownRequestError) ||
+      err.code !== 'P2002'
+    ) {
+      return false;
+    }
+    const target = err.meta?.target;
+    if (typeof target !== 'string' && !Array.isArray(target)) {
+      return true;
+    }
+    const fields = (Array.isArray(target) ? target : [target]).map((item) =>
+      String(item),
+    );
+    if (
+      fields.some(
+        (field) =>
+          field === 'userId' ||
+          field === 'period' ||
+          field.includes('userId_period'),
+      )
+    ) {
+      return false;
+    }
+    return (
+      fields.length === 0 ||
+      fields.includes('id') ||
+      fields.some((field) => field.toLowerCase().includes('pkey'))
+    );
   }
 
   private async persistAssistantMessage(args: {

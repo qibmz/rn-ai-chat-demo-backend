@@ -1,6 +1,6 @@
 import { HttpException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { MessageRole } from '@prisma/client';
+import { MessageRole, Prisma } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import type { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -42,6 +42,7 @@ type CreateUiStreamArgs = {
   execute: (args: { writer: UiStreamWriter }) => void;
   onEnd?: (args: {
     isAborted: boolean;
+    isCancelled?: boolean;
     responseMessage: { parts?: Array<{ type: string; text?: string }> };
   }) => void | Promise<void>;
 };
@@ -966,6 +967,98 @@ describe('ChatStreamService', () => {
 
     expect(streamTextMock).not.toHaveBeenCalled();
     expect(createWebToolsMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps onEnd text when finally overlaps a deferred assistant insert', async () => {
+    billing.computeCostMicros.mockReturnValue(100n);
+    billing.computeWebToolsCostMicros.mockReturnValue(5000n);
+    webSession.billableSearchCount = 1;
+
+    let releaseInsert!: () => void;
+    const insertGate = new Promise<void>((resolve) => {
+      releaseInsert = resolve;
+    });
+    const assistantPayloads: Array<{
+      content: string;
+      finishReason: string | null;
+    }> = [];
+    txMessageCreate.mockImplementation(
+      async (args: {
+        data?: {
+          role?: string;
+          content?: string;
+          finishReason?: string | null;
+        };
+      }) => {
+        if (args.data?.role === MessageRole.assistant) {
+          assistantPayloads.push({
+            content: args.data.content ?? '',
+            finishReason: args.data.finishReason ?? null,
+          });
+          await insertGate;
+        }
+        return {};
+      },
+    );
+
+    pipeMock.mockImplementation(() => {
+      void capturedOnEnd?.({
+        isAborted: false,
+        isCancelled: true,
+        responseMessage: { parts: [{ type: 'text', text: 'onEnd正文' }] },
+      });
+      return Promise.resolve();
+    });
+
+    const pendingStream = runHappyStream();
+    try {
+      await vi.waitFor(() => {
+        expect(assistantPayloads).toHaveLength(1);
+      });
+      expect(assistantPayloads[0]).toEqual({
+        content: 'onEnd正文',
+        finishReason: 'aborted',
+      });
+    } finally {
+      releaseInsert();
+      await pendingStream;
+    }
+
+    expect(assistantPayloads).toHaveLength(1);
+    expect(billing.recordSpend).toHaveBeenCalledTimes(1);
+    expect(billing.recordSpend).toHaveBeenCalledWith(userId, 5100n);
+    expect(billing.incrementWeeklySpend).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not recordSpend again when the assistant message id hits P2002', async () => {
+    await runHappyStream();
+    txMessageCreate.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+        meta: { target: ['id'] },
+      }),
+    );
+
+    await capturedOnEnd?.({
+      isAborted: true,
+      responseMessage: { parts: [{ type: 'text', text: '半截' }] },
+    });
+
+    expect(billing.recordSpend).not.toHaveBeenCalled();
+    expect(billing.incrementWeeklySpend).not.toHaveBeenCalled();
+
+    await capturedOnEnd?.({
+      isAborted: true,
+      responseMessage: { parts: [{ type: 'text', text: '另一份' }] },
+    });
+
+    expect(billing.recordSpend).not.toHaveBeenCalled();
+    expect(
+      txMessageCreate.mock.calls.filter(
+        (call) => call[0]?.data?.role === MessageRole.assistant,
+      ),
+    ).toHaveLength(1);
   });
 
   it('retries persist after a DB failure and does not mark persisted early', async () => {
