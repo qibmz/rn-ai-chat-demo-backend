@@ -1,3 +1,4 @@
+import type { ModelMessage } from 'ai';
 import { createWebTools } from './create-web-tools.js';
 import type { DeepSeekToolsClient } from './deepseek-tools.client.js';
 import type { DeepSeekSearchResult } from './deepseek-tools.types.js';
@@ -65,7 +66,7 @@ async function exec(
       input: unknown,
       options: {
         toolCallId: string;
-        messages: unknown[];
+        messages: ModelMessage[];
         abortSignal?: AbortSignal;
         context: unknown;
       },
@@ -79,7 +80,7 @@ async function exec(
   }
   return tool.execute(input, {
     toolCallId: 'call-1',
-    messages: [],
+    messages: [] as ModelMessage[],
     abortSignal,
     context: {},
   }) as Promise<unknown>;
