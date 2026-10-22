@@ -114,6 +114,10 @@ model Message {
   costMicros         BigInt?     @map("cost_micros")
   /// Snapshot of pricing version / unit prices used for costMicros
   priceVersion       String?     @map("price_version")
+  sources            Json?       @map("sources")
+  webSearchCount     Int         @default(0) @map("web_search_count")
+  webFetchCount      Int         @default(0) @map("web_fetch_count")
+  webToolsCostMicros BigInt      @default(0) @map("web_tools_cost_micros")
   createdAt          DateTime    @default(now()) @map("created_at")
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
